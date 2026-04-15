@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🍓 whatinthePI
+# 🍓 whatinthePI - circa 2026 (o'neill, guino-o, cuaycong, beira)
 
 **Raspberry Pi 4B Wi-Fi Management & Access Point Tools**
 
