@@ -281,9 +281,10 @@ echo "1) Setup Access Point (AP Mode) - Create your own Wi-Fi network"
 echo "2) Install Wi-Fi Manager only - Manage existing Wi-Fi connections"
 echo "3) Install all tools + create aliases (no AP setup)"
 echo "4) Full setup - Install everything + run AP setup"
-echo "5) Exit"
+echo "5) Check for updates"
+echo "6) Exit"
 echo ""
-read -p "Choose [1-5]: " choice
+read -p "Choose [1-6]: " choice
 
 case $choice in
     1)
@@ -338,6 +339,14 @@ case $choice in
         sudo ./setup_ap.sh
         ;;
     5)
+        echo -e "${YELLOW}Checking for updates...${NC}"
+        if [ -f ~/whatinthePI/update.sh ]; then
+            ~/whatinthePI/update.sh
+        else
+            echo -e "${RED}Update script not found. Run full setup first.${NC}"
+        fi
+        ;;
+    6)
         echo -e "${GREEN}Exiting...${NC}"
         exit 0
         ;;
