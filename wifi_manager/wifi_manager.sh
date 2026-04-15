@@ -14,6 +14,7 @@ NC='\033[0m' # No Color
 
 # Function to display menu
 show_menu() {
+    clear
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}   Raspberry Pi Wi-Fi Manager${NC}"
     echo -e "${GREEN}========================================${NC}"
@@ -36,6 +37,15 @@ show_menu() {
         fi
     fi
     
+    echo -e "\n${BLUE}System Info:${NC}"
+    echo -e "  Hostname: ${YELLOW}$(hostname)${NC}"
+    
+    # Show AP IP if in AP mode
+    if systemctl is-active --quiet hostapd; then
+        AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+        echo -e "  AP Mode IP: ${YELLOW}$AP_IP${NC}"
+    fi
+    
     echo -e "\n${BLUE}Options:${NC}"
     echo "1) Scan for available networks"
     echo "2) Connect to a Wi-Fi network"
@@ -47,9 +57,11 @@ show_menu() {
     echo "8) List saved networks"
     echo "9) Enable AP mode (Access Point)"
     echo "10) Disable AP mode (Back to client mode)"
-    echo "11) Exit"
+    echo "11) Change hostname"
+    echo "12) Change AP IP address"
+    echo "13) Exit"
     echo -e "${GREEN}========================================${NC}"
-    read -p "Enter your choice [1-11]: " choice
+    read -p "Enter your choice [1-13]: " choice
 }
 
 # Function to scan for networks
@@ -83,8 +95,6 @@ EOF"
     else
         # Secured network
         echo -e "${YELLOW}Connecting to secured network: $SSID${NC}"
-        # Generate encrypted password
-        ENCRYPTED=$(wpa_passphrase "$SSID" "$PASSWORD" | grep -v "^[[:space:]]*#" | grep -v "^\t" | grep -v "psk=" | head -1)
         sudo bash -c "cat >> /etc/wpa_supplicant/wpa_supplicant.conf << EOF
 network={
     ssid=\"$SSID\"
@@ -184,6 +194,106 @@ list_saved() {
     read -p "Press Enter to continue..."
 }
 
+# Function to change hostname
+change_hostname() {
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}Change Hostname${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "Current hostname: ${GREEN}$(hostname)${NC}"
+    echo ""
+    read -p "Enter new hostname: " NEW_HOSTNAME
+    
+    if [ -z "$NEW_HOSTNAME" ]; then
+        echo -e "${RED}No hostname entered. Cancelled.${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    if [ "$NEW_HOSTNAME" = "$(hostname)" ]; then
+        echo -e "${YELLOW}Hostname unchanged. Cancelled.${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    echo -e "${YELLOW}Changing hostname from $(hostname) to $NEW_HOSTNAME...${NC}"
+    
+    # Change hostname
+    echo "$NEW_HOSTNAME" | sudo tee /etc/hostname
+    
+    # Update hosts file
+    sudo sed -i "s/127.0.1.1.*/127.0.1.1\t$NEW_HOSTNAME/" /etc/hosts
+    
+    # Update avahi/mDNS for .local resolution
+    if command -v avahi-daemon &> /dev/null; then
+        sudo systemctl restart avahi-daemon
+    fi
+    
+    echo -e "${GREEN}✓ Hostname changed to $NEW_HOSTNAME${NC}"
+    echo -e "${YELLOW}Note: You need to reboot for changes to fully take effect${NC}"
+    echo ""
+    read -p "Reboot now? (y/n): " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        sudo reboot
+    else
+        echo -e "${YELLOW}Remember to reboot later for hostname change to apply${NC}"
+        read -p "Press Enter to continue..."
+    fi
+}
+
+# Function to change AP IP address
+change_ap_ip() {
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}Change Access Point IP Address${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+    
+    # Check if AP mode is enabled
+    if ! systemctl is-active --quiet hostapd; then
+        echo -e "${RED}AP mode is not currently active!${NC}"
+        echo -e "${YELLOW}This feature only works when AP mode is enabled.${NC}"
+        echo -e "${YELLOW}Run 'apsetup' first to enable AP mode.${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    # Get current IP
+    CURRENT_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    echo -e "Current AP IP: ${GREEN}$CURRENT_IP${NC}"
+    echo ""
+    
+    read -p "Enter new static IP address for AP [1.2.1.1]: " NEW_IP
+    NEW_IP=${NEW_IP:-1.2.1.1}
+    
+    if [ "$NEW_IP" = "$CURRENT_IP" ]; then
+        echo -e "${YELLOW}IP unchanged. Cancelled.${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    echo -e "${YELLOW}Changing AP IP from $CURRENT_IP to $NEW_IP...${NC}"
+    
+    # Stop services
+    sudo systemctl stop hostapd dnsmasq
+    
+    # Update dhcpcd.conf
+    sudo sed -i "s/static ip_address=.*/static ip_address=$NEW_IP\/24/" /etc/dhcpcd.conf
+    
+    # Update dnsmasq.conf
+    sudo sed -i "s/dhcp-range=.*,/dhcp-range=${NEW_IP%.*}.50,/" /etc/dnsmasq.conf
+    sudo sed -i "s/dhcp-option=3,.*/dhcp-option=3,$NEW_IP/" /etc/dnsmasq.conf
+    sudo sed -i "s/dhcp-option=6,.*/dhcp-option=6,$NEW_IP/" /etc/dnsmasq.conf
+    sudo sed -i "s/listen-address=.*/listen-address=$NEW_IP/" /etc/dnsmasq.conf
+    
+    # Restart services
+    sudo systemctl restart dhcpcd
+    sudo systemctl start hostapd dnsmasq
+    
+    echo -e "${GREEN}✓ AP IP changed to $NEW_IP${NC}"
+    echo -e "${YELLOW}Note: You may need to reconnect to the AP with the new IP${NC}"
+    echo ""
+    read -p "Press Enter to continue..."
+}
+
 # Function to enable AP mode
 enable_ap_mode() {
     echo -e "${YELLOW}WARNING: This will disable client mode and enable Access Point mode${NC}"
@@ -239,8 +349,9 @@ while true; do
         8) list_saved ;;
         9) enable_ap_mode ;;
         10) disable_ap_mode ;;
-        11) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
+        11) change_hostname ;;
+        12) change_ap_ip ;;
+        13) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
         *) echo -e "${RED}Invalid option. Please try again.${NC}"; sleep 2 ;;
     esac
-    clear
 done
