@@ -46,7 +46,13 @@ if iwgetid -r > /dev/null 2>&1; then
     echo -e "  IP Address:  ${YELLOW}$(hostname -I | awk '{print $1}')${NC}"
 else
     echo -e "  Wi-Fi:       ${YELLOW}Not connected / AP Mode${NC}"
-    echo -e "  AP IP:       ${YELLOW}1.2.1.1${NC}"
+    # Check if AP mode is active
+    if systemctl is-active --quiet hostapd; then
+        AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+        echo -e "  AP IP:       ${YELLOW}${AP_IP:-1.2.1.1}${NC}"
+    else
+        echo -e "  AP IP:       ${YELLOW}1.2.1.1 (default)${NC}"
+    fi
 fi
 echo ""
 
@@ -67,11 +73,13 @@ echo ""
 
 # Available commands
 echo -e "${GREEN}💡 Available Commands:${NC}"
-echo -e "  ${YELLOW}help${NC}      - Show all commands"
-echo -e "  ${YELLOW}status${NC}    - System status"
-echo -e "  ${YELLOW}welcome${NC}   - Show this welcome message"
-echo -e "  ${YELLOW}wifiman${NC}   - Wi-Fi manager"
-echo -e "  ${YELLOW}apsetup${NC}   - Setup access point"
+echo -e "  ${YELLOW}help${NC}        - Show all commands"
+echo -e "  ${YELLOW}status${NC}      - System status"
+echo -e "  ${YELLOW}welcome${NC}     - Show this welcome message"
+echo -e "  ${YELLOW}changename${NC}  - Change hostname"
+echo -e "  ${YELLOW}changeip${NC}    - Change AP IP address"
+echo -e "  ${YELLOW}wifiman${NC}     - Wi-Fi manager"
+echo -e "  ${YELLOW}apsetup${NC}     - Setup access point"
 echo ""
 
 echo -e "${CYAN}========================================${NC}"
