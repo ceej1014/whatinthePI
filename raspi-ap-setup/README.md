@@ -15,7 +15,7 @@ An interactive script that turns your Raspberry Pi 4B into a customizable Wi-Fi 
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-cd YOUR_REPO_NAME/raspi-ap-setup
+git clone https://github.com/ceej1014/whatinthePI.git
+cd whatinthePI/raspi-ap-setup
 chmod +x setup_ap.sh
 sudo ./setup_ap.sh
