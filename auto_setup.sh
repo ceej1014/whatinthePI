@@ -4,54 +4,252 @@
 
 set -e
 
-echo "========================================="
-echo "Raspberry Pi Auto Setup"
-echo "========================================="
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+clear
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}   Raspberry Pi Tools Installer${NC}"
+echo -e "${GREEN}========================================${NC}"
 
 # Clone the repository if not already present
 if [ ! -d "whatinthePI" ]; then
-    echo "Cloning repository..."
+    echo -e "${YELLOW}Cloning repository...${NC}"
     git clone https://github.com/ceej1014/whatinthePI.git
     cd whatinthePI
 else
     cd whatinthePI
-    echo "Repository already exists, updating..."
+    echo -e "${YELLOW}Repository already exists, updating...${NC}"
     git pull
 fi
 
 # Make all scripts executable
-chmod +x raspi-ap-setup/setup_ap.sh
-chmod +x wifi_manager/wifi_manager.sh
-chmod +x auto-setup/*.sh 2>/dev/null || true
+chmod +x raspi-ap-setup/setup_ap.sh 2>/dev/null || true
+chmod +x wifi_manager/wifi_manager.sh 2>/dev/null || true
+chmod +x help.sh 2>/dev/null || true
+chmod +x quickref.sh 2>/dev/null || true
+chmod +x status.sh 2>/dev/null || true
+chmod +x wifi_helper.sh 2>/dev/null || true
+
+# Create aliases for easy access
+create_aliases() {
+    echo -e "${YELLOW}Creating aliases...${NC}"
+    
+    # Add to .bash_aliases for current user
+    cat >> ~/.bash_aliases << 'EOF'
+
+# Raspberry Pi Tools Aliases
+alias help='~/whatinthePI/help.sh'
+alias quickref='~/whatinthePI/quickref.sh'
+alias status='~/whatinthePI/status.sh'
+alias wifiman='sudo ~/whatinthePI/wifi_manager/wifi_manager.sh'
+alias apsetup='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
+alias apon='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
+alias apoff='sudo systemctl stop hostapd dnsmasq 2>/dev/null; sudo systemctl restart wpa_supplicant'
+alias wifi='~/whatinthePI/wifi_helper.sh'
+alias myip='hostname -I | awk "{print \$1}"'
+alias myip='hostname -I | awk "{print \$1}"'
+alias netstat='sudo netstat -tulpn'
+alias reboot='sudo reboot'
+alias shutdown='sudo shutdown now'
+
+# Wi-Fi quick commands
+wifion() { sudo rfkill unblock wifi && sudo ip link set wlan0 up; echo "Wi-Fi ON"; }
+wifioff() { sudo rfkill block wifi; echo "Wi-Fi OFF"; }
+wifiscan() { sudo iwlist wlan0 scan | grep -E "ESSID|Quality"; }
+wificonnect() { 
+    read -p "Enter SSID: " ssid
+    read -s -p "Enter password: " pass
+    echo
+    echo "Connecting to $ssid..."
+    wpa_passphrase "$ssid" "$pass" | sudo tee -a /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null
+    sudo systemctl restart wpa_supplicant
+    sleep 3
+    wifistatus
+}
+wifistatus() { 
+    if iwgetid -r > /dev/null 2>&1; then
+        echo "Connected to: $(iwgetid -r)"
+        echo "IP: $(hostname -I | awk '{print $1}')"
+    else
+        echo "Not connected to any network"
+    fi
+}
+wifidisconnect() { sudo dhclient -r wlan0; echo "Disconnected"; }
+wififorget() { 
+    echo "Opening wpa_supplicant.conf - delete the network entry"
+    sudo nano /etc/wpa_supplicant/wpa_supplicant.conf
+    sudo systemctl restart wpa_supplicant
+}
+wifilist() { sudo grep -E "^[[:space:]]*ssid=" /etc/wpa_supplicant/wpa_supplicant.conf | sed 's/.*ssid="\(.*\)"/\1/'; }
+EOF
+
+    # Source the aliases
+    source ~/.bash_aliases 2>/dev/null || true
+    
+    echo -e "${GREEN}Aliases created successfully!${NC}"
+}
+
+# Create helper scripts if they don't exist
+create_helper_scripts() {
+    # Create status.sh if it doesn't exist
+    if [ ! -f ~/whatinthePI/status.sh ]; then
+        cat > ~/whatinthePI/status.sh << 'EOF'
+#!/bin/bash
+echo "========================================="
+echo "System Status"
+echo "========================================="
+echo "Hostname: $(hostname)"
+echo "IP Address: $(hostname -I | awk '{print $1}')"
+echo "Wi-Fi: $(iwgetid -r 2>/dev/null || echo 'Not connected/AP Mode')"
+echo "Uptime: $(uptime -p)"
+if command -v vcgencmd &> /dev/null; then
+    echo "Temperature: $(vcgencmd measure_temp | cut -d= -f2)"
+fi
+echo "Storage: $(df -h / | awk 'NR==2 {print $5 " used of " $2}')"
+echo "Memory: $(free -h | awk 'NR==2 {print $3 " used of " $2}')"
+echo "========================================="
+EOF
+        chmod +x ~/whatinthePI/status.sh
+    fi
+    
+    # Create wifi_helper.sh if it doesn't exist
+    if [ ! -f ~/whatinthePI/wifi_helper.sh ]; then
+        cat > ~/whatinthePI/wifi_helper.sh << 'EOF'
+#!/bin/bash
+case "$1" in
+    on)
+        sudo rfkill unblock wifi
+        sudo ip link set wlan0 up
+        echo "Wi-Fi turned ON"
+        ;;
+    off)
+        sudo rfkill block wifi
+        echo "Wi-Fi turned OFF"
+        ;;
+    scan)
+        sudo iwlist wlan0 scan | grep -E "ESSID|Quality"
+        ;;
+    status)
+        if iwgetid -r > /dev/null 2>&1; then
+            echo "Connected to: $(iwgetid -r)"
+            echo "IP: $(hostname -I | awk '{print $1}')"
+        else
+            echo "Not connected to any network"
+        fi
+        ;;
+    disconnect)
+        sudo dhclient -r wlan0
+        echo "Disconnected"
+        ;;
+    list)
+        sudo grep -E "^[[:space:]]*ssid=" /etc/wpa_supplicant/wpa_supplicant.conf | sed 's/.*ssid="\(.*\)"/\1/'
+        ;;
+    connect)
+        read -p "Enter SSID: " ssid
+        read -s -p "Enter password: " pass
+        echo
+        echo "Connecting to $ssid..."
+        wpa_passphrase "$ssid" "$pass" | sudo tee -a /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null
+        sudo systemctl restart wpa_supplicant
+        sleep 3
+        wifistatus
+        ;;
+    *)
+        echo "Wi-Fi Helper Commands:"
+        echo "  wifi on        - Turn Wi-Fi ON"
+        echo "  wifi off       - Turn Wi-Fi OFF"
+        echo "  wifi scan      - Scan for networks"
+        echo "  wifi status    - Show connection status"
+        echo "  wifi disconnect- Disconnect from network"
+        echo "  wifi connect   - Connect to a network"
+        echo "  wifi list      - List saved networks"
+        ;;
+esac
+EOF
+        chmod +x ~/whatinthePI/wifi_helper.sh
+    fi
+}
 
 # Ask what to install
 echo ""
-echo "What would you like to do?"
-echo "1) Setup Access Point (AP Mode)"
-echo "2) Install Wi-Fi Manager only"
-echo "3) Run complete auto-setup with defaults"
-echo "4) Exit"
-read -p "Choose [1-4]: " choice
+echo -e "${BLUE}What would you like to do?${NC}"
+echo "1) Setup Access Point (AP Mode) - Create your own Wi-Fi network"
+echo "2) Install Wi-Fi Manager only - Manage existing Wi-Fi connections"
+echo "3) Install all tools + create aliases (no AP setup)"
+echo "4) Full setup - Install everything + run AP setup"
+echo "5) Exit"
+echo ""
+read -p "Choose [1-5]: " choice
 
 case $choice in
     1)
+        echo -e "${YELLOW}Setting up Access Point...${NC}"
+        create_aliases
+        create_helper_scripts
         cd raspi-ap-setup
         sudo ./setup_ap.sh
         ;;
     2)
-        echo "Wi-Fi Manager installed at: $(pwd)/wifi_manager/wifi_manager.sh"
-        echo "Run with: sudo ./wifi_manager/wifi_manager.sh"
+        echo -e "${YELLOW}Installing Wi-Fi Manager only...${NC}"
+        create_aliases
+        create_helper_scripts
+        echo -e "${GREEN}Wi-Fi Manager installed!${NC}"
+        echo -e "Run it with: ${YELLOW}wifiman${NC} or ${YELLOW}sudo wifi_manager/wifi_manager.sh${NC}"
+        echo ""
+        echo "Quick Wi-Fi commands now available:"
+        echo "  wifi on      - Turn Wi-Fi on"
+        echo "  wifi off     - Turn Wi-Fi off"
+        echo "  wifi scan    - Scan for networks"
+        echo "  wifi status  - Check connection"
+        echo "  wifi connect - Connect to network"
         ;;
     3)
-        cd auto-setup
-        sudo ./first_boot_setup.sh
+        echo -e "${YELLOW}Installing all tools...${NC}"
+        create_aliases
+        create_helper_scripts
+        echo -e "${GREEN}All tools installed!${NC}"
+        echo ""
+        echo -e "${BLUE}Available commands:${NC}"
+        echo "  help      - Show full help menu"
+        echo "  quickref  - Quick reference card"
+        echo "  status    - Check system status"
+        echo "  wifiman   - Open Wi-Fi Manager"
+        echo "  apsetup   - Run AP setup (when ready)"
+        echo "  wifi      - Quick Wi-Fi commands"
+        echo ""
+        echo "Type 'help' to see all available commands"
         ;;
     4)
-        echo "Exiting..."
+        echo -e "${YELLOW}Full setup: Installing tools and running AP setup...${NC}"
+        create_aliases
+        create_helper_scripts
+        echo -e "${GREEN}Tools installed! Now running AP setup...${NC}"
+        sleep 2
+        cd raspi-ap-setup
+        sudo ./setup_ap.sh
+        ;;
+    5)
+        echo -e "${GREEN}Exiting...${NC}"
         exit 0
         ;;
     *)
-        echo "Invalid option"
+        echo -e "${RED}Invalid option. Exiting.${NC}"
         exit 1
         ;;
 esac
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Setup Complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "${YELLOW}To see all available commands, type:${NC} ${GREEN}help${NC}"
+echo -e "${YELLOW}For quick reference, type:${NC} ${GREEN}quickref${NC}"
+echo -e "${YELLOW}To check system status, type:${NC} ${GREEN}status${NC}"
+echo ""
+echo -e "${BLUE}Tip: Run 'source ~/.bashrc' to ensure all aliases work${NC}"
