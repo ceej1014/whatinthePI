@@ -60,6 +60,8 @@ echo -e "  ${YELLOW}reboot${NC}                 - Reboot the Pi"
 echo -e "  ${YELLOW}shutdown${NC}               - Shutdown the Pi"
 echo -e "  ${YELLOW}hostname${NC}               - Show current hostname"
 echo -e "  ${YELLOW}myip${NC}                   - Show IP address"
+echo -e "  ${YELLOW}version${NC}                - Show current version and commit"
+echo -e "  ${YELLOW}update${NC}                 - Check for updates and update scripts"
 echo ""
 
 # Network commands
