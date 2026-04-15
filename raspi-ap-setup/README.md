@@ -1,14 +1,18 @@
-# Raspberry Pi 4B Access Point Setup
+# Raspberry Pi 4B Dynamic Access Point Setup
 
-Sets up your Raspberry Pi 4B as a standalone Wi-Fi access point.
+An interactive script that turns your Raspberry Pi 4B into a customizable Wi-Fi access point. Set your own IP address, Wi-Fi name, password (or open network), and hostname.
 
-## Network Details
-- **Wi-Fi Name:** `raspi_cj`
-- **Password:** `gwaposicj245`
-- **Pi Hostname:** `ceejay`
-- **SSH Address:** `ceej@ceejay.local` or `ceej@1.2.1.1`
+## Features
 
-## Quick Setup
+- **Dynamic Configuration** - Interactive prompts for all settings
+- **Custom IP Address** - Choose any static IP for your Pi
+- **Custom Wi-Fi Name** - Set any SSID you want
+- **Flexible Security** - Password-protected or open network
+- **Custom Hostname** - Change the Pi's hostname easily
+- **DHCP Server** - Automatically assigns IPs to connected devices
+- **Internet Sharing** - Optional NAT sharing via ethernet
+
+## Quick Start
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
