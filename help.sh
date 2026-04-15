@@ -1,42 +1,120 @@
 #!/bin/bash
-# Quick reference card for Raspberry Pi tools
+# Help script for Raspberry Pi tools
+# Displays all available commands and their usage
 
+set -e
+
+# Colors for output
 GREEN='\033[0;32m'
+BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 CYAN='\033[0;36m'
-NC='\033[0m'
+PURPLE='\033[0;35m'
+NC='\033[0m' # No Color
 
 clear
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}   Raspberry Pi Tools Help Menu${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║                    QUICK REFERENCE CARD                          ║${NC}"
-echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║ ${GREEN}COMMAND${NC}                    │ ${GREEN}DESCRIPTION${NC}                                      ${CYAN}║${NC}"
-echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║ ${YELLOW}help${NC}                       │ Full help menu                                        ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}quickref${NC}                   │ This quick reference                                  ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}status${NC}                     │ System status (temp, IP, storage)                    ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}welcome${NC}                    │ Show welcome message                                  ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}version${NC}                    │ Show current version                                  ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}update${NC}                     │ Check for updates                                     ${CYAN}║${NC}"
-echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifiman${NC}                    │ Interactive Wi-Fi manager                            ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifi on${NC}                    │ Turn Wi-Fi ON                                         ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifi off${NC}                   │ Turn Wi-Fi OFF                                        ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifi scan${NC}                  │ Scan for networks                                     ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifi connect${NC}               │ Connect to a network                                  ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifi status${NC}                │ Show connection status                                ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifi disconnect${NC}            │ Disconnect from network                               ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifi list${NC}                  │ List saved networks                                   ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}wifi forget${NC}                │ Forget a saved network                                ${CYAN}║${NC}"
-echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║ ${YELLOW}apsetup${NC}                    │ Setup Access Point mode                               ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}apon${NC}                       │ Turn on AP mode                                       ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}apoff${NC}                      │ Turn off AP mode                                      ${CYAN}║${NC}"
-echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║ ${YELLOW}myip${NC}                       │ Show IP address                                       ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}reboot${NC}                     │ Reboot Raspberry Pi                                   ${CYAN}║${NC}"
-echo -e "${CYAN}║ ${YELLOW}shutdown${NC}                   │ Shutdown Raspberry Pi                                 ${CYAN}║${NC}"
-echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════╝${NC}"
+
+# Check if scripts exist
+SCRIPT_DIR="/home/pi/whatinthePI"
+if [ ! -d "$SCRIPT_DIR" ]; then
+    SCRIPT_DIR="$(pwd)"
+fi
+
+echo -e "${CYAN}📋 AVAILABLE COMMANDS:${NC}"
 echo ""
-echo -e "${GREEN}Tip: Use 'help' for detailed descriptions${NC}"
+
+# AP Setup commands
+if [ -f "$SCRIPT_DIR/raspi-ap-setup/setup_ap.sh" ]; then
+    echo -e "${GREEN}🔵 AP SETUP COMMANDS:${NC}"
+    echo -e "  ${YELLOW}apsetup${NC}              - Run interactive AP setup"
+    echo -e "  ${YELLOW}sudo apsetup${NC}         - Run AP setup (if alias not working)"
+    echo -e "  ${YELLOW}apon${NC}                 - Turn on AP mode (same as apsetup)"
+    echo -e "  ${YELLOW}apoff${NC}                - Turn off AP mode (back to client mode)"
+    echo ""
+fi
+
+# Wi-Fi Manager commands
+if [ -f "$SCRIPT_DIR/wifi_manager/wifi_manager.sh" ]; then
+    echo -e "${GREEN}📡 WI-FI MANAGER COMMANDS:${NC}"
+    echo -e "  ${YELLOW}wifiman${NC}              - Open interactive Wi-Fi Manager menu"
+    echo -e "  ${YELLOW}wifi on${NC}              - Turn Wi-Fi ON"
+    echo -e "  ${YELLOW}wifi off${NC}             - Turn Wi-Fi OFF"
+    echo -e "  ${YELLOW}wifi scan${NC}            - Scan for available networks"
+    echo -e "  ${YELLOW}wifi connect${NC}         - Connect to a Wi-Fi network"
+    echo -e "  ${YELLOW}wifi status${NC}          - Show current connection status"
+    echo -e "  ${YELLOW}wifi disconnect${NC}      - Disconnect from current network"
+    echo -e "  ${YELLOW}wifi forget${NC}          - Forget a saved network"
+    echo -e "  ${YELLOW}wifi list${NC}            - List all saved networks"
+    echo -e "  ${YELLOW}wifi signal${NC}          - Show signal strength of current network"
+    echo ""
+fi
+
+# System commands
+echo -e "${GREEN}🖥️  SYSTEM COMMANDS:${NC}"
+echo -e "  ${YELLOW}help${NC}                   - Show this help menu"
+echo -e "  ${YELLOW}quickref${NC}               - Show quick reference card"
+echo -e "  ${YELLOW}status${NC}                 - Show system status (IP, hostname, temp, storage)"
+echo -e "  ${YELLOW}welcome${NC}                - Display welcome message"
+echo -e "  ${YELLOW}version${NC}                - Show current version and commit"
+echo -e "  ${YELLOW}update${NC}                 - Check for updates and update scripts"
+echo -e "  ${YELLOW}changename${NC}             - Change Raspberry Pi hostname"
+echo -e "  ${YELLOW}changeip${NC}               - Change Access Point IP address"
+echo -e "  ${YELLOW}reboot${NC}                 - Reboot the Raspberry Pi"
+echo -e "  ${YELLOW}shutdown${NC}               - Shutdown the Raspberry Pi"
+echo -e "  ${YELLOW}hostname${NC}               - Show current hostname"
+echo -e "  ${YELLOW}myip${NC}                   - Show IP address"
+echo ""
+
+# Network commands
+echo -e "${GREEN}🌐 NETWORK COMMANDS:${NC}"
+echo -e "  ${YELLOW}ping google${NC}            - Test internet connection"
+echo -e "  ${YELLOW}netstat${NC}                - Show network connections"
+echo -e "  ${YELLOW}ifconfig${NC}               - Show network interfaces"
+echo -e "  ${YELLOW}iwconfig${NC}               - Show wireless network configuration"
+echo ""
+
+# Info commands
+echo -e "${GREEN}ℹ️  INFORMATION COMMANDS:${NC}"
+echo -e "  ${YELLOW}date${NC}                   - Show current date and time"
+echo -e "  ${YELLOW}cal${NC}                    - Show calendar"
+echo -e "  ${YELLOW}df -h${NC}                  - Show disk space usage"
+echo -e "  ${YELLOW}free -h${NC}                - Show memory usage"
+echo -e "  ${YELLOW}top${NC}                    - Show running processes (press q to exit)"
+echo -e "  ${YELLOW}htop${NC}                   - Better process viewer (install with: sudo apt install htop)"
+echo ""
+
+# Help for help
+echo -e "${CYAN}💡 TIPS:${NC}"
+echo -e "  • Add '${YELLOW}sudo${NC}' before commands if you get permission errors"
+echo -e "  • Most commands work from anywhere in the system"
+echo -e "  • Use '${YELLOW}Tab${NC}' key for auto-completion"
+echo -e "  • Check logs at: ${YELLOW}/boot/setup_log.txt${NC}"
+echo -e "  • Run '${YELLOW}update${NC}' regularly to get latest features"
+echo ""
+
+# Quick reference
+echo -e "${BLUE}📖 QUICK REFERENCE:${NC}"
+echo -e "  SSH into Pi:    ${GREEN}ssh ceej@$(hostname).local${NC}"
+echo -e "  Current IP:     ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
+echo -e "  Current Wi-Fi:  ${GREEN}$(iwgetid -r 2>/dev/null || echo 'Not connected')${NC}"
+echo ""
+
+# Version info
+if [ -d "$SCRIPT_DIR/.git" ]; then
+    echo -e "${PURPLE}📦 INSTALLED VERSION:${NC}"
+    echo -e "  Commit: ${YELLOW}$(cd $SCRIPT_DIR && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')${NC}"
+    echo -e "  Date:   ${YELLOW}$(cd $SCRIPT_DIR && git log -1 --format=%cd --date=short 2>/dev/null || echo 'unknown')${NC}"
+    echo ""
+fi
+
+echo -e "${GREEN}========================================${NC}"
+echo -e "${YELLOW}For more info, visit:${NC}"
+echo -e "https://github.com/ceej1014/whatinthePI"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "${CYAN}Type 'quickref' for a compact reference card${NC}"
