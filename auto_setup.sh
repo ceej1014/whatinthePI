@@ -36,6 +36,8 @@ chmod +x quickref.sh 2>/dev/null || true
 chmod +x status.sh 2>/dev/null || true
 chmod +x wifi_helper.sh 2>/dev/null || true
 chmod +x welcome.sh 2>/dev/null || true
+chmod +x version.sh 2>/dev/null || true
+chmod +x update.sh 2>/dev/null || true
 
 # Function to create aliases
 create_aliases() {
@@ -258,6 +260,8 @@ echo -e "${GREEN}💡 Available Commands:${NC}"
 echo -e "  ${YELLOW}help${NC}      - Show all commands"
 echo -e "  ${YELLOW}status${NC}    - System status"
 echo -e "  ${YELLOW}welcome${NC}   - Show this welcome message"
+echo -e "  ${YELLOW}version${NC}   - Show version information"
+echo -e "  ${YELLOW}update${NC}    - Check for updates"
 echo -e "  ${YELLOW}wifiman${NC}   - Wi-Fi manager"
 echo -e "  ${YELLOW}apsetup${NC}   - Setup access point"
 echo ""
@@ -322,6 +326,8 @@ case $choice in
         echo "  quickref  - Quick reference card"
         echo "  status    - Check system status"
         echo "  welcome   - Show welcome message"
+        echo "  version   - Show version info"
+        echo "  update    - Check for updates"
         echo "  wifiman   - Open Wi-Fi Manager"
         echo "  apsetup   - Run AP setup (when ready)"
         echo "  wifi      - Quick Wi-Fi commands"
@@ -343,7 +349,8 @@ case $choice in
         if [ -f ~/whatinthePI/update.sh ]; then
             ~/whatinthePI/update.sh
         else
-            echo -e "${RED}Update script not found. Run full setup first.${NC}"
+            echo -e "${YELLOW}Downloading update script...${NC}"
+            curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/update.sh | bash
         fi
         ;;
     6)
@@ -364,6 +371,7 @@ echo ""
 echo -e "${YELLOW}To see all available commands, type:${NC} ${GREEN}help${NC}"
 echo -e "${YELLOW}For quick reference, type:${NC} ${GREEN}quickref${NC}"
 echo -e "${YELLOW}To check system status, type:${NC} ${GREEN}status${NC}"
+echo -e "${YELLOW}To check for updates, type:${NC} ${GREEN}update${NC}"
 echo -e "${YELLOW}The welcome message will appear every time you SSH in!${NC}"
 echo ""
 echo -e "${BLUE}Tip: Run 'source ~/.bashrc' to ensure all aliases work${NC}"
