@@ -13,8 +13,6 @@
 [![Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![Linux](https://img.shields.io/badge/OS-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://www.linux.org/)
 
-[![One-Line Install](https://img.shields.io/badge/🚀_ONE_LINE_INSTALL-curl_-_sSL_|_bash-00ADD8?style=for-the-badge&logo=terminal)](https://github.com/ceej1014/whatinthePI/blob/main/auto_setup.sh)
-
 </div>
 
 ---
