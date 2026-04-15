@@ -19,14 +19,3 @@ git clone https://github.com/ceej1014/whatinthePI.git
 cd whatinthePI/raspi-ap-setup
 chmod +x setup_ap.sh
 sudo ./setup_ap.sh
-
-What You'll Be Asked
-The script will prompt you for:
-
-Hostname - What to name your Pi (default: ceejay)
-
-Static IP - The Pi's IP address (default: 1.2.1.1)
-
-Wi-Fi SSID - Network name (default: raspi_cj)
-
-Wi-Fi Password - Leave blank for open network
