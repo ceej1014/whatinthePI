@@ -1,27 +1,59 @@
 #!/bin/bash
-# Quick reference card
+# Quick reference card - Simple compact version
 
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+clear
 echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║           RASPBERRY PI QUICK REFERENCE CARD              ║"
-echo "╠══════════════════════════════════════════════════════════╣"
-echo "║ COMMAND          │ DESCRIPTION                           ║"
-echo "╠══════════════════════════════════════════════════════════╣"
-echo "║ help             │ Full help menu                        ║"
-echo "║ quickref         │ This quick reference                  ║"
-echo "║ status           │ System status                         ║"
-echo "║ wifiman          │ Wi-Fi Manager (menu)                  ║"
-echo "║ apsetup          │ Access Point setup                    ║"
-echo "║ apoff            │ Turn off AP mode                      ║"
-echo "║ wifi on          │ Turn Wi-Fi on                         ║"
-echo "║ wifi off         │ Turn Wi-Fi off                        ║"
-echo "║ wifi scan        │ Scan for networks                     ║"
-echo "║ wifi status      │ Show connection status                ║"
-echo "║ wifi connect     │ Connect to network                    ║"
-echo "║ wifi disconnect  │ Disconnect from network               ║"
-echo "║ wifi list        │ List saved networks                   ║"
-echo "║ myip             │ Show IP address                       ║"
-echo "║ reboot           │ Reboot the Pi                         ║"
-echo "║ shutdown         │ Shutdown the Pi                       ║"
-echo "╚══════════════════════════════════════════════════════════╝"
+echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}              RASPBERRY PI TOOLS - QUICK REFERENCE${NC}"
+echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
 echo ""
+
+echo -e "${BLUE}📡 CURRENT STATUS:${NC}"
+echo -e "  IP: ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
+echo -e "  Wi-Fi: ${GREEN}$(iwgetid -r 2>/dev/null || echo 'Not connected')${NC}"
+echo ""
+
+echo -e "${BLUE}🖥️  SYSTEM COMMANDS:${NC}"
+echo -e "  ${YELLOW}help${NC}       - Full help menu"
+echo -e "  ${YELLOW}quickref${NC}   - This quick reference"
+echo -e "  ${YELLOW}status${NC}     - System status"
+echo -e "  ${YELLOW}welcome${NC}    - Welcome message"
+echo -e "  ${YELLOW}version${NC}    - Show version"
+echo -e "  ${YELLOW}update${NC}     - Check for updates"
+echo -e "  ${YELLOW}myip${NC}       - Show IP address"
+echo -e "  ${YELLOW}reboot${NC}     - Reboot Pi"
+echo -e "  ${YELLOW}shutdown${NC}   - Shutdown Pi"
+echo ""
+
+echo -e "${BLUE}📡 WI-FI COMMANDS:${NC}"
+echo -e "  ${YELLOW}wifiman${NC}    - Interactive Wi-Fi manager"
+echo -e "  ${YELLOW}wifi on${NC}    - Turn Wi-Fi ON"
+echo -e "  ${YELLOW}wifi off${NC}   - Turn Wi-Fi OFF"
+echo -e "  ${YELLOW}wifi scan${NC}  - Scan for networks"
+echo -e "  ${YELLOW}wifi connect${NC} - Connect to network"
+echo -e "  ${YELLOW}wifi status${NC} - Show connection status"
+echo -e "  ${YELLOW}wifi list${NC}  - List saved networks"
+echo ""
+
+echo -e "${BLUE}🔵 AP MODE COMMANDS:${NC}"
+echo -e "  ${YELLOW}apsetup${NC}    - Setup Access Point"
+echo -e "  ${YELLOW}apon${NC}       - Turn on AP mode"
+echo -e "  ${YELLOW}apoff${NC}      - Turn off AP mode"
+echo ""
+
+echo -e "${BLUE}🌐 NETWORK COMMANDS:${NC}"
+echo -e "  ${YELLOW}ping google${NC} - Test internet"
+echo -e "  ${YELLOW}netstat${NC}    - Show connections"
+echo ""
+
+echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}SSH: ssh ceej@$(hostname).local${NC}"
+echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
+echo ""
+echo -e "${YELLOW}Type 'help' for detailed descriptions${NC}"
