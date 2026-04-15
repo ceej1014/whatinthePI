@@ -1,21 +1,24 @@
 <div align="center">
 
-# 🍓 whatinthePI - Raspberry Pi Tools Collection
+# 🍓 whatinthePI
 
-[![GitHub stars](https://img.shields.io/github/stars/ceej1014/whatinthePI?style=for-the-badge&logo=github)](https://github.com/ceej1014/whatinthePI/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/ceej1014/whatinthePI?style=for-the-badge&logo=github)](https://github.com/ceej1014/whatinthePI/network/members)
-[![GitHub issues](https://img.shields.io/github/issues/ceej1014/whatinthePI?style=for-the-badge&logo=github)](https://github.com/ceej1014/whatinthePI/issues)
-[![License](https://img.shields.io/github/license/ceej1014/whatinthePI?style=for-the-badge)](https://github.com/ceej1014/whatinthePI/blob/main/LICENSE.md)
+**Raspberry Pi 4B Wi-Fi Management & Access Point Tools**
 
-[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-4B-C51A4A?style=for-the-badge&logo=raspberry-pi)](https://www.raspberrypi.com/)
-[![Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?style=for-the-badge&logo=gnu-bash)](https://www.gnu.org/software/bash/)
-[![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github)](https://github.com/ceej1014)
+[![GitHub stars](https://img.shields.io/github/stars/ceej1014/whatinthePI?style=for-the-badge&logo=github&color=yellow)](https://github.com/ceej1014/whatinthePI/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/ceej1014/whatinthePI?style=for-the-badge&logo=github&color=blue)](https://github.com/ceej1014/whatinthePI/network/members)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
-[![One-Line Install](https://img.shields.io/badge/🚀_One_Line_Install-curl_-_sSL_|_bash-4EAA25?style=for-the-badge&logo=terminal)](https://raw.githubusercontent.com/ceej1014/whatinthePI/main/auto_setup.sh)
+[![Raspberry Pi 4B](https://img.shields.io/badge/Raspberry_Pi_4B-C51A4A?style=for-the-badge&logo=raspberry-pi&logoColor=white)](https://www.raspberrypi.com/)
+[![Bash](https://img.shields.io/badge/Bash_Script-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
+[![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://www.linux.org/)
+
+[![Install](https://img.shields.io/badge/🚀_One_Click_Install-curl_|_bash-4EAA25?style=for-the-badge&logo=terminal)](https://raw.githubusercontent.com/ceej1014/whatinthePI/main/auto_setup.sh)
 
 </div>
 
-## Quick Install
+---
+
+## One-Line Install
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/auto_setup.sh | bash
