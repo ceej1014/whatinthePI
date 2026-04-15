@@ -38,6 +38,8 @@ chmod +x wifi_helper.sh 2>/dev/null || true
 chmod +x welcome.sh 2>/dev/null || true
 chmod +x version.sh 2>/dev/null || true
 chmod +x update.sh 2>/dev/null || true
+chmod +x changename.sh 2>/dev/null || true
+chmod +x changeip.sh 2>/dev/null || true
 
 # Function to create aliases
 create_aliases() {
@@ -53,6 +55,8 @@ alias status='~/whatinthePI/status.sh'
 alias welcome='~/whatinthePI/welcome.sh'
 alias version='~/whatinthePI/version.sh'
 alias update='~/whatinthePI/update.sh'
+alias changename='~/whatinthePI/changename.sh'
+alias changeip='~/whatinthePI/changeip.sh'
 alias wifiman='sudo ~/whatinthePI/wifi_manager/wifi_manager.sh'
 alias apsetup='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
 alias apon='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
@@ -236,7 +240,12 @@ if iwgetid -r > /dev/null 2>&1; then
     echo -e "  IP Address:  ${YELLOW}$(hostname -I | awk '{print $1}')${NC}"
 else
     echo -e "  Wi-Fi:       ${YELLOW}Not connected / AP Mode${NC}"
-    echo -e "  AP IP:       ${YELLOW}1.2.1.1${NC}"
+    if systemctl is-active --quiet hostapd; then
+        AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+        echo -e "  AP IP:       ${YELLOW}${AP_IP:-1.2.1.1}${NC}"
+    else
+        echo -e "  AP IP:       ${YELLOW}1.2.1.1 (default)${NC}"
+    fi
 fi
 echo ""
 
@@ -257,13 +266,13 @@ echo ""
 
 # Available commands
 echo -e "${GREEN}💡 Available Commands:${NC}"
-echo -e "  ${YELLOW}help${NC}      - Show all commands"
-echo -e "  ${YELLOW}status${NC}    - System status"
-echo -e "  ${YELLOW}welcome${NC}   - Show this welcome message"
-echo -e "  ${YELLOW}version${NC}   - Show version information"
-echo -e "  ${YELLOW}update${NC}    - Check for updates"
-echo -e "  ${YELLOW}wifiman${NC}   - Wi-Fi manager"
-echo -e "  ${YELLOW}apsetup${NC}   - Setup access point"
+echo -e "  ${YELLOW}help${NC}        - Show all commands"
+echo -e "  ${YELLOW}status${NC}      - System status"
+echo -e "  ${YELLOW}welcome${NC}     - Show this welcome message"
+echo -e "  ${YELLOW}changename${NC}  - Change hostname"
+echo -e "  ${YELLOW}changeip${NC}    - Change AP IP address"
+echo -e "  ${YELLOW}wifiman${NC}     - Wi-Fi manager"
+echo -e "  ${YELLOW}apsetup${NC}     - Setup access point"
 echo ""
 
 echo -e "${CYAN}========================================${NC}"
@@ -286,9 +295,11 @@ echo "2) Install Wi-Fi Manager only - Manage existing Wi-Fi connections"
 echo "3) Install all tools + create aliases (no AP setup)"
 echo "4) Full setup - Install everything + run AP setup"
 echo "5) Check for updates"
-echo "6) Exit"
+echo "6) Change hostname"
+echo "7) Change AP IP address"
+echo "8) Exit"
 echo ""
-read -p "Choose [1-6]: " choice
+read -p "Choose [1-8]: " choice
 
 case $choice in
     1)
@@ -328,6 +339,8 @@ case $choice in
         echo "  welcome   - Show welcome message"
         echo "  version   - Show version info"
         echo "  update    - Check for updates"
+        echo "  changename- Change hostname"
+        echo "  changeip  - Change AP IP address"
         echo "  wifiman   - Open Wi-Fi Manager"
         echo "  apsetup   - Run AP setup (when ready)"
         echo "  wifi      - Quick Wi-Fi commands"
@@ -354,6 +367,22 @@ case $choice in
         fi
         ;;
     6)
+        echo -e "${YELLOW}Changing hostname...${NC}"
+        if [ -f ~/whatinthePI/changename.sh ]; then
+            ~/whatinthePI/changename.sh
+        else
+            echo -e "${RED}changename.sh not found. Run full setup first.${NC}"
+        fi
+        ;;
+    7)
+        echo -e "${YELLOW}Changing AP IP address...${NC}"
+        if [ -f ~/whatinthePI/changeip.sh ]; then
+            ~/whatinthePI/changeip.sh
+        else
+            echo -e "${RED}changeip.sh not found. Run full setup first.${NC}"
+        fi
+        ;;
+    8)
         echo -e "${GREEN}Exiting...${NC}"
         exit 0
         ;;
@@ -372,6 +401,8 @@ echo -e "${YELLOW}To see all available commands, type:${NC} ${GREEN}help${NC}"
 echo -e "${YELLOW}For quick reference, type:${NC} ${GREEN}quickref${NC}"
 echo -e "${YELLOW}To check system status, type:${NC} ${GREEN}status${NC}"
 echo -e "${YELLOW}To check for updates, type:${NC} ${GREEN}update${NC}"
+echo -e "${YELLOW}To change hostname, type:${NC} ${GREEN}changename${NC}"
+echo -e "${YELLOW}To change AP IP, type:${NC} ${GREEN}changeip${NC}"
 echo -e "${YELLOW}The welcome message will appear every time you SSH in!${NC}"
 echo ""
 echo -e "${BLUE}Tip: Run 'source ~/.bashrc' to ensure all aliases work${NC}"
