@@ -9,6 +9,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 clear
@@ -34,8 +35,9 @@ chmod +x help.sh 2>/dev/null || true
 chmod +x quickref.sh 2>/dev/null || true
 chmod +x status.sh 2>/dev/null || true
 chmod +x wifi_helper.sh 2>/dev/null || true
+chmod +x welcome.sh 2>/dev/null || true
 
-# Create aliases for easy access
+# Function to create aliases
 create_aliases() {
     echo -e "${YELLOW}Creating aliases...${NC}"
     
@@ -46,12 +48,12 @@ create_aliases() {
 alias help='~/whatinthePI/help.sh'
 alias quickref='~/whatinthePI/quickref.sh'
 alias status='~/whatinthePI/status.sh'
+alias welcome='~/whatinthePI/welcome.sh'
 alias wifiman='sudo ~/whatinthePI/wifi_manager/wifi_manager.sh'
 alias apsetup='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
 alias apon='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
 alias apoff='sudo systemctl stop hostapd dnsmasq 2>/dev/null; sudo systemctl restart wpa_supplicant'
 alias wifi='~/whatinthePI/wifi_helper.sh'
-alias myip='hostname -I | awk "{print \$1}"'
 alias myip='hostname -I | awk "{print \$1}"'
 alias netstat='sudo netstat -tulpn'
 alias reboot='sudo reboot'
@@ -94,7 +96,7 @@ EOF
     echo -e "${GREEN}Aliases created successfully!${NC}"
 }
 
-# Create helper scripts if they don't exist
+# Function to create helper scripts
 create_helper_scripts() {
     # Create status.sh if it doesn't exist
     if [ ! -f ~/whatinthePI/status.sh ]; then
@@ -175,6 +177,101 @@ EOF
     fi
 }
 
+# Function to setup welcome message with clear RASPI banner
+setup_welcome() {
+    echo -e "${YELLOW}Setting up welcome message...${NC}"
+    
+    # Create welcome.sh if it doesn't exist
+    if [ ! -f ~/whatinthePI/welcome.sh ]; then
+        cat > ~/whatinthePI/welcome.sh << 'EOF'
+#!/bin/bash
+# Custom welcome message for Raspberry Pi
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+clear
+
+# Clear RASPI ASCII Art Banner
+echo -e "${RED}"
+echo '   ██████╗  █████╗ ███████╗██████╗ ██╗'
+echo '   ██╔══██╗██╔══██╗██╔════╝██╔══██╗██║'
+echo '   ██████╔╝███████║███████╗██████╔╝██║'
+echo '   ██╔══██╗██╔══██║╚════██║██╔═══╝ ██║'
+echo '   ██║  ██║██║  ██║███████║██║     ██║'
+echo '   ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝'
+echo -e "${NC}"
+echo -e "${WHITE}   Raspberry Pi - Welcome ${USER}!${NC}"
+echo -e "${CYAN}========================================${NC}"
+echo ""
+
+# System info
+echo -e "${GREEN}📊 System Information:${NC}"
+echo -e "  Hostname:    ${YELLOW}$(hostname)${NC}"
+echo -e "  Uptime:      ${YELLOW}$(uptime -p | sed 's/up //')${NC}"
+echo -e "  Kernel:      ${YELLOW}$(uname -r)${NC}"
+echo ""
+
+# Temperature (only on Pi)
+if command -v vcgencmd &> /dev/null; then
+    TEMP=$(vcgencmd measure_temp | cut -d= -f2)
+    echo -e "${GREEN}🌡️  Temperature:${NC} ${YELLOW}$TEMP${NC}"
+fi
+echo ""
+
+# Network info
+echo -e "${GREEN}🌐 Network Information:${NC}"
+if iwgetid -r > /dev/null 2>&1; then
+    echo -e "  Wi-Fi SSID:  ${YELLOW}$(iwgetid -r)${NC}"
+    echo -e "  IP Address:  ${YELLOW}$(hostname -I | awk '{print $1}')${NC}"
+else
+    echo -e "  Wi-Fi:       ${YELLOW}Not connected / AP Mode${NC}"
+    echo -e "  AP IP:       ${YELLOW}1.2.1.1${NC}"
+fi
+echo ""
+
+# Storage
+echo -e "${GREEN}💾 Storage:${NC}"
+df -h / | awk 'NR==2 {printf "  Used: %s / %s (%s)\n", $3, $2, $5}'
+echo ""
+
+# Memory
+echo -e "${GREEN}🧠 Memory:${NC}"
+free -h | awk 'NR==2 {printf "  Used: %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100}'
+echo ""
+
+# Last login
+echo -e "${GREEN}🔐 Last Login:${NC}"
+last -1 -n 1 | head -1 | sed 's/^/  /' 2>/dev/null || echo "  First login"
+echo ""
+
+# Available commands
+echo -e "${GREEN}💡 Available Commands:${NC}"
+echo -e "  ${YELLOW}help${NC}      - Show all commands"
+echo -e "  ${YELLOW}status${NC}    - System status"
+echo -e "  ${YELLOW}welcome${NC}   - Show this welcome message"
+echo -e "  ${YELLOW}wifiman${NC}   - Wi-Fi manager"
+echo -e "  ${YELLOW}apsetup${NC}   - Setup access point"
+echo ""
+
+echo -e "${CYAN}========================================${NC}"
+EOF
+        chmod +x ~/whatinthePI/welcome.sh
+    fi
+    
+    # Install to /etc/profile.d so it shows on SSH login
+    sudo cp ~/whatinthePI/welcome.sh /etc/profile.d/welcome.sh
+    sudo chmod +x /etc/profile.d/welcome.sh
+    
+    echo -e "${GREEN}Welcome message installed! It will show every time you SSH in.${NC}"
+}
+
 # Ask what to install
 echo ""
 echo -e "${BLUE}What would you like to do?${NC}"
@@ -191,6 +288,7 @@ case $choice in
         echo -e "${YELLOW}Setting up Access Point...${NC}"
         create_aliases
         create_helper_scripts
+        setup_welcome
         cd raspi-ap-setup
         sudo ./setup_ap.sh
         ;;
@@ -198,6 +296,7 @@ case $choice in
         echo -e "${YELLOW}Installing Wi-Fi Manager only...${NC}"
         create_aliases
         create_helper_scripts
+        setup_welcome
         echo -e "${GREEN}Wi-Fi Manager installed!${NC}"
         echo -e "Run it with: ${YELLOW}wifiman${NC} or ${YELLOW}sudo wifi_manager/wifi_manager.sh${NC}"
         echo ""
@@ -212,12 +311,14 @@ case $choice in
         echo -e "${YELLOW}Installing all tools...${NC}"
         create_aliases
         create_helper_scripts
+        setup_welcome
         echo -e "${GREEN}All tools installed!${NC}"
         echo ""
         echo -e "${BLUE}Available commands:${NC}"
         echo "  help      - Show full help menu"
         echo "  quickref  - Quick reference card"
         echo "  status    - Check system status"
+        echo "  welcome   - Show welcome message"
         echo "  wifiman   - Open Wi-Fi Manager"
         echo "  apsetup   - Run AP setup (when ready)"
         echo "  wifi      - Quick Wi-Fi commands"
@@ -228,6 +329,7 @@ case $choice in
         echo -e "${YELLOW}Full setup: Installing tools and running AP setup...${NC}"
         create_aliases
         create_helper_scripts
+        setup_welcome
         echo -e "${GREEN}Tools installed! Now running AP setup...${NC}"
         sleep 2
         cd raspi-ap-setup
@@ -251,5 +353,6 @@ echo ""
 echo -e "${YELLOW}To see all available commands, type:${NC} ${GREEN}help${NC}"
 echo -e "${YELLOW}For quick reference, type:${NC} ${GREEN}quickref${NC}"
 echo -e "${YELLOW}To check system status, type:${NC} ${GREEN}status${NC}"
+echo -e "${YELLOW}The welcome message will appear every time you SSH in!${NC}"
 echo ""
 echo -e "${BLUE}Tip: Run 'source ~/.bashrc' to ensure all aliases work${NC}"
