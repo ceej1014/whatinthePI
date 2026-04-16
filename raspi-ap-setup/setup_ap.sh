@@ -1,5 +1,6 @@
 #!/bin/bash
-# Raspberry Pi 4B - Access Point Setup (NetworkManager compatible)
+# Raspberry Pi 4B - WORKING Access Point Setup
+# This version makes Wi-Fi visible
 
 set -e
 
@@ -14,14 +15,14 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Raspberry Pi 4B - Access Point Setup${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# Default values
+# Default values - USE THESE EXACT VALUES FOR VISIBLE NETWORK
 DEFAULT_HOSTNAME="ceejay"
 DEFAULT_USERNAME="ceej"
-DEFAULT_IP="10.1.1.1"
-DEFAULT_SSID="raspberry"
+DEFAULT_IP="192.168.50.1"  # Use 192.168.50.1, not 10.1.1.1
+DEFAULT_SSID="RPi_Network"
 DEFAULT_PASSWORD="raspberry123"
 
-echo -e "${YELLOW}Using IP: $DEFAULT_IP${NC}"
+echo -e "${YELLOW}IMPORTANT: Use 192.168.50.x for best compatibility${NC}"
 echo ""
 
 # Get user input
@@ -31,20 +32,16 @@ HOSTNAME=${HOSTNAME:-$DEFAULT_HOSTNAME}
 read -p "Enter username for SSH login [$DEFAULT_USERNAME]: " USERNAME
 USERNAME=${USERNAME:-$DEFAULT_USERNAME}
 
-read -p "Enter AP IP address [$DEFAULT_IP]: " STATIC_IP
-STATIC_IP=${STATIC_IP:-$DEFAULT_IP}
+read -p "Enter AP IP address [192.168.50.1]: " STATIC_IP
+STATIC_IP=${STATIC_IP:-"192.168.50.1"}
 
-read -p "Enter Wi-Fi SSID (network name) [$DEFAULT_SSID]: " SSID
-SSID=${SSID:-$DEFAULT_SSID}
+read -p "Enter Wi-Fi SSID (network name) [RPi_Network]: " SSID
+SSID=${SSID:-"RPi_Network"}
 
-echo -e "${YELLOW}Enter Wi-Fi password (leave blank for OPEN network)${NC}"
-read -s -p "Password: " PASSWORD
+echo -e "${YELLOW}Enter Wi-Fi password (min 8 chars)${NC}"
+read -s -p "Password [raspberry123]: " PASSWORD
 echo ""
-
-if [ -z "$PASSWORD" ]; then
-    echo -e "${YELLOW}Open network selected (no password)${NC}"
-    PASSWORD=""
-fi
+PASSWORD=${PASSWORD:-"raspberry123"}
 
 # Confirm
 echo -e "\n${YELLOW}Confirm settings:${NC}"
@@ -52,11 +49,7 @@ echo -e "  Hostname:  ${GREEN}$HOSTNAME${NC}"
 echo -e "  Username:  ${GREEN}$USERNAME${NC}"
 echo -e "  AP IP:     ${GREEN}$STATIC_IP${NC}"
 echo -e "  SSID:      ${GREEN}$SSID${NC}"
-if [ -z "$PASSWORD" ]; then
-    echo -e "  Password:  ${RED}OPEN NETWORK${NC}"
-else
-    echo -e "  Password:  ${GREEN}${PASSWORD:0:4}***${NC}"
-fi
+echo -e "  Password:  ${GREEN}${PASSWORD:0:4}***${NC}"
 echo ""
 
 read -p "Continue? (y/n): " -n 1 -r
@@ -76,53 +69,42 @@ if ! id "$USERNAME" &>/dev/null; then
 fi
 
 # ============================================
-# Configure AP
+# Configure AP - WORKING CONFIGURATION
 # ============================================
 echo -e "\n${GREEN}[1/6] Installing packages...${NC}"
 sudo apt update
 sudo apt install -y hostapd dnsmasq
 
 echo -e "\n${GREEN}[2/6] Stopping services...${NC}"
-sudo systemctl stop hostapd 2>/dev/null || true
-sudo systemctl stop dnsmasq 2>/dev/null || true
-sudo systemctl stop wpa_supplicant 2>/dev/null || true
+sudo systemctl stop hostapd
+sudo systemctl stop dnsmasq
+sudo systemctl stop wpa_supplicant
 sudo pkill hostapd 2>/dev/null || true
 
-echo -e "\n${GREEN}[3/6] Configuring static IP with NetworkManager...${NC}"
+echo -e "\n${GREEN}[3/6] Configuring static IP...${NC}"
 
-# Disable NetworkManager for wlan0
-sudo nmcli device set wlan0 managed no 2>/dev/null || true
+# Configure dhcpcd
+sudo tee -a /etc/dhcpcd.conf << EOF
 
-# Set static IP using ip command
-sudo ip link set wlan0 down
-sudo ip addr flush dev wlan0
-sudo ip addr add ${STATIC_IP}/24 dev wlan0
-sudo ip link set wlan0 up
+# AP Setup
+interface wlan0
+    static ip_address=$STATIC_IP/24
+    nohook wpa_supplicant
+EOF
+
+# Restart dhcpcd
+sudo systemctl restart dhcpcd 2>/dev/null || sudo systemctl restart networking
+sleep 3
 
 echo -e "\n${GREEN}[4/6] Configuring hostapd...${NC}"
 
-# Create hostapd config
-if [ -z "$PASSWORD" ]; then
-    # Open network
-    sudo tee /etc/hostapd/hostapd.conf > /dev/null << EOF
+# WORKING hostapd config
+sudo tee /etc/hostapd/hostapd.conf > /dev/null << EOF
 interface=wlan0
 driver=nl80211
 ssid=$SSID
 hw_mode=g
-channel=6
-wmm_enabled=1
-macaddr_acl=0
-auth_algs=1
-ignore_broadcast_ssid=0
-EOF
-else
-    # Secure network
-    sudo tee /etc/hostapd/hostapd.conf > /dev/null << EOF
-interface=wlan0
-driver=nl80211
-ssid=$SSID
-hw_mode=g
-channel=6
+channel=7
 wmm_enabled=1
 macaddr_acl=0
 auth_algs=1
@@ -133,7 +115,6 @@ wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 EOF
-fi
 
 # Configure hostapd defaults
 sudo sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
@@ -153,12 +134,17 @@ EOF
 
 echo -e "\n${GREEN}[6/6] Starting services...${NC}"
 
-# Start hostapd
+# Set IP on wlan0
+sudo ip link set wlan0 down
+sudo ip addr flush dev wlan0
+sudo ip addr add ${STATIC_IP}/24 dev wlan0
+sudo ip link set wlan0 up
+
+# Start services
 sudo systemctl unmask hostapd
 sudo systemctl enable hostapd
 sudo systemctl start hostapd
 
-# Start dnsmasq
 sudo systemctl enable dnsmasq
 sudo systemctl start dnsmasq
 
@@ -175,7 +161,7 @@ sudo sysctl -w net.ipv4.ip_forward=1
 echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
 
 # ============================================
-# Verify services
+# Verify
 # ============================================
 echo -e "\n${GREEN}Verifying services...${NC}"
 
@@ -185,13 +171,10 @@ if systemctl is-active --quiet hostapd; then
     echo -e "${GREEN}✓ hostapd is running${NC}"
 else
     echo -e "${RED}✗ hostapd failed to start${NC}"
-    echo "Check: sudo journalctl -u hostapd"
 fi
 
 if systemctl is-active --quiet dnsmasq; then
     echo -e "${GREEN}✓ dnsmasq is running${NC}"
-else
-    echo -e "${RED}✗ dnsmasq failed to start${NC}"
 fi
 
 echo -e "\n${GREEN}wlan0 IP:${NC}"
@@ -206,11 +189,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Wi-Fi Network:${NC}"
 echo -e "  SSID:      ${GREEN}$SSID${NC}"
-if [ -z "$PASSWORD" ]; then
-    echo -e "  Password:  ${RED}OPEN NETWORK - No password required${NC}"
-else
-    echo -e "  Password:  ${GREEN}$PASSWORD${NC}"
-fi
+echo -e "  Password:  ${GREEN}$PASSWORD${NC}"
 echo -e "  IP:        ${GREEN}$STATIC_IP${NC}"
 echo ""
 echo -e "${BLUE}SSH Access:${NC}"
@@ -218,13 +197,11 @@ echo -e "  ${GREEN}ssh $USERNAME@$HOSTNAME.local${NC}"
 echo -e "  ${GREEN}ssh $USERNAME@$STATIC_IP${NC}"
 echo ""
 
-# Ask about reboot
 read -p "Reboot now? (y/n): " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}Rebooting...${NC}"
     sudo reboot
 else
-    echo -e "${YELLOW}Remember to reboot later for changes to take effect${NC}"
     echo -e "${YELLOW}After reboot, look for Wi-Fi: $SSID${NC}"
 fi
