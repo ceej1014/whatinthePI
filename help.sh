@@ -64,6 +64,7 @@ echo -e "  ${YELLOW}version${NC}                - Show current version and commi
 echo -e "  ${YELLOW}update${NC}                 - Check for updates and update scripts"
 echo -e "  ${YELLOW}changename${NC}             - Change Raspberry Pi hostname"
 echo -e "  ${YELLOW}changeip${NC}               - Change Access Point IP address"
+echo -e "  ${YELLOW}uninstall${NC}              - Completely remove whatinthePI tools"
 echo -e "  ${YELLOW}reboot${NC}                 - Reboot the Raspberry Pi"
 echo -e "  ${YELLOW}shutdown${NC}               - Shutdown the Raspberry Pi"
 echo -e "  ${YELLOW}hostname${NC}               - Show current hostname"
