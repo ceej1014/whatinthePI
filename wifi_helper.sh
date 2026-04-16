@@ -1,6 +1,5 @@
 #!/bin/bash
-# Wi-Fi Helper - Works in both AP and Client modes
-# Fixed AP detection - only shows AP mode if hostapd is actually running
+# Wi-Fi Helper - Works in both AP and Client modes, shows Ethernet IP
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -8,24 +7,16 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Fixed AP detection - checks if hostapd is actually running AND has config
-is_ap_mode() { 
-    systemctl is-active --quiet hostapd 2>/dev/null && [ -f /etc/hostapd/hostapd.conf ]
-}
-
-# Fixed client mode detection
-is_client_mode() {
-    systemctl is-active --quiet wpa_supplicant 2>/dev/null
-}
+is_ap_mode() { systemctl is-active --quiet hostapd 2>/dev/null && [ -f /etc/hostapd/hostapd.conf ]; }
 
 case "$1" in
     on)
         echo -e "${YELLOW}Switching to Client Mode...${NC}"
         if is_ap_mode; then
-            sudo systemctl stop hostapd dnsmasq
-            sudo systemctl disable hostapd dnsmasq
+            sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
+            sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
         fi
-        sudo systemctl unmask wpa_supplicant 2>/dev/null
+        sudo systemctl unmask wpa_supplicant 2>/dev/null || true
         sudo systemctl enable wpa_supplicant
         sudo systemctl restart wpa_supplicant
         sudo rfkill unblock wifi
@@ -34,95 +25,107 @@ case "$1" in
         ;;
     off)
         echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
+        sudo systemctl stop wpa_supplicant hostapd dnsmasq 2>/dev/null || true
         sudo rfkill block wifi
         sudo ip link set wlan0 down
-        sudo systemctl stop wpa_supplicant
         echo -e "${GREEN}✓ Wi-Fi OFF${NC}"
         ;;
     ap)
         echo -e "${YELLOW}Switching to AP Mode...${NC}"
-        sudo systemctl stop wpa_supplicant
+        if ! [ -f /etc/hostapd/hostapd.conf ]; then
+            echo -e "${RED}AP not configured yet. Run 'apsetup' first.${NC}"
+            exit 1
+        fi
+        sudo systemctl stop wpa_supplicant 2>/dev/null || true
         sudo systemctl mask wpa_supplicant
         sudo systemctl unmask hostapd
-        sudo systemctl enable hostapd
-        sudo systemctl start hostapd
-        sudo systemctl start dnsmasq
+        sudo systemctl enable hostapd dnsmasq
+        sudo systemctl start hostapd dnsmasq
         echo -e "${GREEN}✓ AP mode enabled${NC}"
         ;;
     status)
         if is_ap_mode; then
-            echo -e "${YELLOW}Mode: ACCESS POINT (broadcasting Wi-Fi)${NC}"
+            echo -e "${YELLOW}Mode: ACCESS POINT${NC}"
             AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
-            echo -e "  AP IP: ${GREEN}$AP_IP${NC}"
-            SSID=$(sudo grep "^ssid" /etc/hostapd/hostapd.conf | cut -d= -f2)
-            echo -e "  SSID: ${GREEN}$SSID${NC}"
+            SSID=$(sudo grep "^ssid" /etc/hostapd/hostapd.conf 2>/dev/null | cut -d= -f2)
+            echo -e "  AP SSID: ${GREEN}${SSID:-unknown}${NC}"
+            echo -e "  AP IP:   ${GREEN}${AP_IP:-unknown}${NC}"
         elif iwgetid -r > /dev/null 2>&1; then
-            echo -e "${GREEN}Mode: CLIENT (connected to Wi-Fi)${NC}"
+            echo -e "${GREEN}Mode: CLIENT (connected)${NC}"
             echo -e "  Connected to: ${GREEN}$(iwgetid -r)${NC}"
-            echo -e "  IP: ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
-        elif is_client_mode; then
-            echo -e "${YELLOW}Mode: CLIENT (not connected to any network)${NC}"
+            echo -e "  Wi-Fi IP:     ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
+        elif systemctl is-active --quiet wpa_supplicant; then
+            echo -e "${YELLOW}Mode: CLIENT (not connected)${NC}"
         else
-            echo -e "${RED}Wi-Fi is disabled${NC}"
+            echo -e "${RED}Wi-Fi is OFF${NC}"
+        fi
+        # Show Ethernet IP regardless of Wi-Fi mode
+        if ip link show eth0 | grep -q "state UP"; then
+            ETH_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+            echo -e "  Ethernet IP:  ${GREEN}$ETH_IP${NC}"
+        else
+            echo -e "  Ethernet:     ${RED}Not connected${NC}"
         fi
         ;;
     scan)
         if is_ap_mode; then
-            echo -e "${RED}Cannot scan while in AP mode. Run 'wifi off' first.${NC}"
-        else
-            echo -e "${YELLOW}Scanning for Wi-Fi networks...${NC}"
-            sudo iwlist wlan0 scan | grep -E "ESSID|Quality|Encryption" | sed 's/^[ \t]*//'
+            echo -e "${RED}Cannot scan in AP mode. Run 'wifi off' first.${NC}"
+            exit 1
         fi
+        echo -e "${YELLOW}Scanning for networks...${NC}"
+        sudo iwlist wlan0 scan 2>/dev/null | grep -E "ESSID|Quality|Encryption" | sed 's/^[ \t]*//'
         ;;
     connect)
         if is_ap_mode; then
-            echo -e "${RED}Cannot connect while in AP mode. Run 'wifi off' first.${NC}"
+            echo -e "${RED}Cannot connect in AP mode. Run 'wifi off' first.${NC}"
+            exit 1
+        fi
+        echo -e "${YELLOW}Available networks:${NC}"
+        sudo iwlist wlan0 scan 2>/dev/null | grep "ESSID" | sort -u | sed 's/^[ \t]*ESSID://g' | tr -d '"'
+        echo ""
+        read -p "Enter SSID: " ssid
+        if [ -z "$ssid" ]; then
+            echo -e "${RED}No SSID entered.${NC}"
+            exit 1
+        fi
+        read -s -p "Enter password (press Enter for open network): " pass
+        echo ""
+
+        # Delete any existing connection profile for this SSID to avoid conflicts
+        sudo nmcli connection delete "$ssid" 2>/dev/null
+
+        if [ -z "$pass" ]; then
+            # Open network: no security
+            echo -e "${YELLOW}Connecting to open network: $ssid${NC}"
+            sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid"
+            sudo nmcli connection modify "$ssid" wifi-sec.key-mgmt none
+            sudo nmcli connection up "$ssid"
         else
-            echo -e "${YELLOW}Available networks:${NC}"
-            sudo iwlist wlan0 scan | grep "ESSID" | sort -u | sed 's/^[ \t]*ESSID://g' | tr -d '"'
-            echo ""
-            read -p "Enter SSID: " ssid
-            read -s -p "Enter password (press Enter for open network): " pass
-            echo ""
-            if [ -z "$pass" ]; then
-                sudo nmcli device wifi connect "$ssid"
-            else
-                sudo nmcli device wifi connect "$ssid" password "$pass"
-            fi
-            sleep 3
-            if iwgetid -r | grep -q "$ssid"; then
-                echo -e "${GREEN}✓ Connected to $ssid${NC}"
-            else
-                echo -e "${RED}✗ Failed to connect${NC}"
-            fi
+            # Secured network: WPA2-PSK
+            echo -e "${YELLOW}Connecting to secured network: $ssid${NC}"
+            sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+            sudo nmcli connection up "$ssid"
+        fi
+
+        sleep 3
+        if iwgetid -r 2>/dev/null | grep -q "$ssid"; then
+            echo -e "${GREEN}✓ Connected to $ssid${NC}"
+        else
+            echo -e "${RED}✗ Failed to connect. Check SSID/password.${NC}"
         fi
         ;;
-    disable)
-        echo -e "${YELLOW}Disabling Wi-Fi completely...${NC}"
-        sudo rfkill block wifi
-        sudo ip link set wlan0 down
-        sudo systemctl stop wpa_supplicant hostapd dnsmasq 2>/dev/null
-        echo -e "${GREEN}✓ Wi-Fi disabled${NC}"
-        ;;
-    enable)
-        echo -e "${YELLOW}Enabling Wi-Fi...${NC}"
-        sudo rfkill unblock wifi
-        sudo ip link set wlan0 up
-        echo -e "${GREEN}✓ Wi-Fi enabled${NC}"
-        ;;
-    help|--help|-h)
+    help|--help|-h|"")
         echo -e "${BLUE}Wi-Fi Helper Commands:${NC}"
-        echo "  wifi on      - Switch to Client mode (connect to Wi-Fi)"
+        echo "  wifi on      - Switch to Client mode"
         echo "  wifi off     - Turn Wi-Fi OFF completely"
-        echo "  wifi ap      - Switch to AP mode (create Wi-Fi hotspot)"
-        echo "  wifi status  - Show current mode and connection"
+        echo "  wifi ap      - Switch to AP mode (hotspot)"
+        echo "  wifi status  - Show current mode, Wi-Fi IP, and Ethernet IP"
         echo "  wifi scan    - Scan for networks (client mode only)"
         echo "  wifi connect - Connect to a network (client mode only)"
-        echo "  wifi enable  - Enable Wi-Fi radio"
-        echo "  wifi disable - Disable Wi-Fi radio"
         ;;
     *)
         echo -e "${RED}Unknown command: $1${NC}"
         echo "Run 'wifi help' for available commands"
+        exit 1
         ;;
 esac
