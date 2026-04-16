@@ -31,7 +31,7 @@ save_hotspot_name() {
     echo "$1" | sudo tee "$HOTSPOT_CONF" > /dev/null
 }
 
-# Helper functions - FIXED is_ap_mode
+# Helper functions
 is_ap_mode() {
     nmcli -t -f NAME,DEVICE,TYPE con show --active 2>/dev/null | grep -q ":wlan0:802-11-wireless" && \
     nmcli -t -f 802-11-wireless.mode con show --active 2>/dev/null | grep -q "ap"
@@ -47,26 +47,23 @@ show_status() {
 
     if is_ap_mode; then
         echo -e "  AP Mode:     ${GREEN}ACTIVE${NC}"
-        AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1 2>/dev/null || echo "unknown")
+        AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
         SSID=$(nmcli -t -f 802-11-wireless.ssid con show --active 2>/dev/null | head -1)
         echo -e "  AP SSID:     ${GREEN}${SSID:-unknown}${NC}"
         echo -e "  AP IP:       ${GREEN}${AP_IP:-unknown}${NC}"
     else
         echo -e "  AP Mode:     ${YELLOW}INACTIVE${NC}"
-        # Check client connection using nmcli instead of iwgetid
-        CLIENT_SSID=$(nmcli -t -f NAME,DEVICE,TYPE con show --active 2>/dev/null | grep ":wlan0:802-11-wireless" | cut -d: -f1)
-        if [ -n "$CLIENT_SSID" ]; then
+        if iwgetid -r > /dev/null 2>&1; then
             echo -e "  Client Mode: ${GREEN}CONNECTED${NC}"
-            echo -e "  Connected to: ${GREEN}$CLIENT_SSID${NC}"
-            CLIENT_IP=$(ip -4 addr show wlan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "none")
-            echo -e "  Wi-Fi IP:     ${GREEN}$CLIENT_IP${NC}"
+            echo -e "  Connected to: ${GREEN}$(iwgetid -r)${NC}"
+            echo -e "  Wi-Fi IP:     ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
         else
             echo -e "  Client Mode: ${YELLOW}NOT connected to any network${NC}"
         fi
     fi
     # Ethernet IP
-    if ip link show eth0 2>/dev/null | grep -q "state UP"; then
-        ETH_IP=$(ip addr show eth0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    if ip link show eth0 | grep -q "state UP"; then
+        ETH_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
         echo -e "  Ethernet IP:  ${GREEN}$ETH_IP${NC}"
     else
         echo -e "  Ethernet:     ${RED}Not connected${NC}"
@@ -79,13 +76,15 @@ show_status() {
 case "$1" in
     on)
         echo -e "${YELLOW}Switching to Client Mode...${NC}"
-        # Turn off AP if active
         if is_ap_mode; then
             HOTSPOT=$(get_hotspot_name)
             [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
         fi
         sudo nmcli radio wifi on
-        sudo ip link set wlan0 up 2>/dev/null
+        sudo systemctl unmask wpa_supplicant 2>/dev/null || true
+        sudo systemctl enable wpa_supplicant
+        sudo systemctl restart wpa_supplicant
+        sudo ip link set wlan0 up
         echo -e "${GREEN}✓ Client mode enabled${NC}"
         ;;
     off)
@@ -95,7 +94,7 @@ case "$1" in
             [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
         fi
         sudo nmcli radio wifi off
-        sudo ip link set wlan0 down 2>/dev/null
+        sudo ip link set wlan0 down
         echo -e "${GREEN}✓ Wi-Fi OFF${NC}"
         ;;
     ap)
@@ -105,14 +104,8 @@ case "$1" in
             echo -e "${RED}Hotspot not configured. Run 'wifi ap-setup' first.${NC}"
             exit 1
         fi
-        # FIXED: Don't turn off Wi-Fi - just disconnect any client connection
-        sudo nmcli device disconnect wlan0 2>/dev/null
-        sudo nmcli connection down "$HOTSPOT" 2>/dev/null
-        # Delete and recreate to ensure clean state
-        sudo nmcli connection delete "$HOTSPOT" 2>/dev/null
-        # Recreate hotspot with correct settings
-        HOTSPOT_PASS=$(sudo nmcli -s -t connection show "$HOTSPOT" 2>/dev/null | grep wifi-sec.psk | cut -d: -f2)
-        sudo nmcli connection add type wifi ifname wlan0 con-name "$HOTSPOT" autoconnect no ssid "$HOTSPOT" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$HOTSPOT_PASS"
+        sudo nmcli radio wifi off
+        sudo ip link set wlan0 down
         sudo nmcli connection modify "$HOTSPOT" connection.interface-name wlan0
         sudo nmcli connection up "$HOTSPOT"
         echo -e "${GREEN}✓ AP mode enabled${NC}"
@@ -128,12 +121,10 @@ case "$1" in
             echo -e "${RED}Password must be at least 8 characters. Using default.${NC}"
             pass="raspberry123"
         fi
-        # Delete any existing profile with the same name
         sudo nmcli connection delete "$ssid" 2>/dev/null
-        # Create hotspot with explicit interface binding
-        sudo nmcli connection add type wifi ifname wlan0 con-name "$ssid" autoconnect no ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+        sudo nmcli connection add type wifi ifname wlan0 con-name "$ssid" autoconnect yes ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
         sudo nmcli connection modify "$ssid" connection.interface-name wlan0
-        # Save the SSID for future use
+        sudo nmcli connection modify "$ssid" connection.autoconnect-priority 100
         save_hotspot_name "$ssid"
         echo -e "${GREEN}✓ Hotspot configured. Start it with 'wifi ap'${NC}"
         ;;
@@ -142,6 +133,7 @@ case "$1" in
         HOTSPOT=$(get_hotspot_name)
         [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
         sudo nmcli radio wifi on
+        sudo systemctl restart wpa_supplicant
         echo -e "${GREEN}✓ AP mode disabled, client mode restored${NC}"
         ;;
     status)
@@ -153,9 +145,7 @@ case "$1" in
             exit 1
         fi
         echo -e "${YELLOW}Scanning for networks...${NC}"
-        sudo nmcli device wifi rescan
-        sleep 2
-        nmcli -f SSID,SIGNAL,SECURITY device wifi list
+        sudo iwlist wlan0 scan 2>/dev/null | grep -E "ESSID|Quality|Encryption" | sed 's/^[ \t]*//'
         ;;
     connect)
         if is_ap_mode; then
@@ -163,29 +153,20 @@ case "$1" in
             exit 1
         fi
         echo -e "${YELLOW}Available networks:${NC}"
-        nmcli -f SSID device wifi list | tail -n +2 | sort -u
+        sudo iwlist wlan0 scan 2>/dev/null | grep "ESSID" | sort -u | sed 's/^[ \t]*ESSID://g' | tr -d '"'
         echo ""
         read -p "Enter SSID: " ssid
         if [ -z "$ssid" ]; then
             echo -e "${RED}No SSID entered.${NC}"
             exit 1
         fi
-        read -s -p "Enter password (press Enter for open network): " pass
-        echo ""
-
-        # Delete any existing connection with the same SSID to avoid conflicts
+        # Delete any existing connection profile for this SSID
         sudo nmcli connection delete "$ssid" 2>/dev/null
-
-        if [ -z "$pass" ]; then
-            echo -e "${YELLOW}Connecting to open network: $ssid${NC}"
-            sudo nmcli device wifi connect "$ssid"
-        else
-            echo -e "${YELLOW}Connecting to secured network: $ssid${NC}"
-            sudo nmcli device wifi connect "$ssid" password "$pass"
-        fi
-
+        # Use the interactive connection method (handles all security types automatically)
+        echo -e "${YELLOW}Attempting to connect to $ssid...${NC}"
+        sudo nmcli --ask device wifi connect "$ssid"
         sleep 3
-        if nmcli -t -f NAME con show --active | grep -q "$ssid"; then
+        if iwgetid -r 2>/dev/null | grep -q "$ssid"; then
             echo -e "${GREEN}✓ Connected to $ssid${NC}"
         else
             echo -e "${RED}✗ Failed to connect. Check SSID/password.${NC}"
@@ -247,7 +228,10 @@ if [ -z "$1" ]; then
                     [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
                 fi
                 sudo nmcli radio wifi on
-                sudo ip link set wlan0 up 2>/dev/null
+                sudo systemctl unmask wpa_supplicant 2>/dev/null || true
+                sudo systemctl enable wpa_supplicant
+                sudo systemctl restart wpa_supplicant
+                sudo ip link set wlan0 up
                 echo -e "${GREEN}✓ Client mode enabled${NC}"
                 read -p "Press Enter..."
                 ;;
@@ -257,14 +241,8 @@ if [ -z "$1" ]; then
                 if [ -z "$HOTSPOT" ] || ! nmcli con show "$HOTSPOT" &>/dev/null; then
                     echo -e "${RED}Hotspot not configured. Please run option 3 first.${NC}"
                 else
-                    # FIXED: Don't turn off Wi-Fi - just disconnect
-                    sudo nmcli device disconnect wlan0 2>/dev/null
-                    sudo nmcli connection down "$HOTSPOT" 2>/dev/null
-                    # Get the password from the saved profile
-                    HOTSPOT_PASS=$(sudo nmcli -s -t connection show "$HOTSPOT" 2>/dev/null | grep wifi-sec.psk | cut -d: -f2)
-                    # Delete old and recreate fresh
-                    sudo nmcli connection delete "$HOTSPOT" 2>/dev/null
-                    sudo nmcli connection add type wifi ifname wlan0 con-name "$HOTSPOT" autoconnect no ssid "$HOTSPOT" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$HOTSPOT_PASS"
+                    sudo nmcli radio wifi off
+                    sudo ip link set wlan0 down
                     sudo nmcli connection modify "$HOTSPOT" connection.interface-name wlan0
                     sudo nmcli connection up "$HOTSPOT"
                     echo -e "${GREEN}✓ AP mode enabled${NC}"
@@ -283,8 +261,9 @@ if [ -z "$1" ]; then
                     pass="raspberry123"
                 fi
                 sudo nmcli connection delete "$ssid" 2>/dev/null
-                sudo nmcli connection add type wifi ifname wlan0 con-name "$ssid" autoconnect no ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+                sudo nmcli connection add type wifi ifname wlan0 con-name "$ssid" autoconnect yes ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
                 sudo nmcli connection modify "$ssid" connection.interface-name wlan0
+                sudo nmcli connection modify "$ssid" connection.autoconnect-priority 100
                 save_hotspot_name "$ssid"
                 echo -e "${GREEN}✓ Hotspot configured. Start it with option 2.${NC}"
                 read -p "Press Enter..."
@@ -294,6 +273,7 @@ if [ -z "$1" ]; then
                 HOTSPOT=$(get_hotspot_name)
                 [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
                 sudo nmcli radio wifi on
+                sudo systemctl restart wpa_supplicant
                 echo -e "${GREEN}✓ AP mode disabled, client mode restored${NC}"
                 read -p "Press Enter..."
                 ;;
@@ -302,9 +282,7 @@ if [ -z "$1" ]; then
                     echo -e "${RED}Cannot scan in AP mode. Switch to Client Mode first.${NC}"
                 else
                     echo -e "${YELLOW}Scanning...${NC}"
-                    sudo nmcli device wifi rescan
-                    sleep 2
-                    nmcli -f SSID,SIGNAL,SECURITY device wifi list
+                    sudo iwlist wlan0 scan 2>/dev/null | grep -E "ESSID|Quality" | sed 's/^[ \t]*//'
                 fi
                 read -p "Press Enter..."
                 ;;
@@ -313,22 +291,17 @@ if [ -z "$1" ]; then
                     echo -e "${RED}Cannot connect in AP mode. Switch to Client Mode first.${NC}"
                 else
                     echo -e "${YELLOW}Available networks:${NC}"
-                    nmcli -f SSID device wifi list | tail -n +2 | sort -u
+                    sudo iwlist wlan0 scan 2>/dev/null | grep "ESSID" | sort -u | sed 's/^[ \t]*ESSID://g' | tr -d '"'
                     echo ""
                     read -p "Enter SSID: " ssid
                     if [ -z "$ssid" ]; then
                         echo -e "${RED}No SSID entered.${NC}"
                     else
-                        read -s -p "Enter password (press Enter for open network): " pass
-                        echo ""
                         sudo nmcli connection delete "$ssid" 2>/dev/null
-                        if [ -z "$pass" ]; then
-                            sudo nmcli device wifi connect "$ssid"
-                        else
-                            sudo nmcli device wifi connect "$ssid" password "$pass"
-                        fi
+                        echo -e "${YELLOW}Attempting to connect to $ssid...${NC}"
+                        sudo nmcli --ask device wifi connect "$ssid"
                         sleep 2
-                        if nmcli -t -f NAME con show --active | grep -q "$ssid"; then
+                        if iwgetid -r | grep -q "$ssid"; then
                             echo -e "${GREEN}✓ Connected${NC}"
                         else
                             echo -e "${RED}✗ Connection failed. Check SSID/password.${NC}"
@@ -344,7 +317,7 @@ if [ -z "$1" ]; then
                     [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
                 fi
                 sudo nmcli radio wifi off
-                sudo ip link set wlan0 down 2>/dev/null
+                sudo ip link set wlan0 down
                 echo -e "${GREEN}✓ Wi-Fi OFF${NC}"
                 read -p "Press Enter..."
                 ;;
@@ -352,18 +325,14 @@ if [ -z "$1" ]; then
                 if is_ap_mode; then
                     echo -e "Mode: ACCESS POINT"
                     SSID=$(nmcli -t -f 802-11-wireless.ssid con show --active 2>/dev/null | head -1)
-                    IP=$(ip addr show wlan0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+                    IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
                     echo -e "  SSID: $SSID"
                     echo -e "  IP:   $IP"
+                elif iwgetid -r > /dev/null 2>&1; then
+                    echo -e "Connected to: $(iwgetid -r)"
+                    echo -e "IP Address: $(hostname -I | awk '{print $1}')"
                 else
-                    CLIENT_SSID=$(nmcli -t -f NAME con show --active 2>/dev/null | grep -v "Hotspot" | head -1)
-                    if [ -n "$CLIENT_SSID" ]; then
-                        echo -e "Connected to: $CLIENT_SSID"
-                        IP=$(ip -4 addr show wlan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "none")
-                        echo -e "IP Address: $IP"
-                    else
-                        echo -e "Not connected"
-                    fi
+                    echo -e "Not connected"
                 fi
                 read -p "Press Enter..."
                 ;;
