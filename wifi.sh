@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unified Wi-Fi Manager – Command-line + Interactive menu
-# Fully tested on Raspberry Pi OS Bookworm
+# Includes 'ap-setup' for one‑step hotspot configuration
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -17,7 +17,7 @@ sudo mkdir -p "$PROFILES_DIR"
 sudo chmod 755 "$CONFIG_DIR" "$PROFILES_DIR"
 
 # -------------------------------------------------------------------
-# Profile management
+# Profile management (same as before)
 # -------------------------------------------------------------------
 get_current_profile() {
     if [ -f "$CURRENT_PROFILE_FILE" ]; then
@@ -76,10 +76,7 @@ load_profile() {
         return 1
     fi
     
-    # Delete old connection if exists
     sudo nmcli connection delete "$name" 2>/dev/null
-    
-    # Create AP connection
     sudo nmcli connection add type wifi ifname wlan0 con-name "$name" autoconnect yes ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
     sudo nmcli connection modify "$name" connection.interface-name wlan0
     sudo nmcli connection modify "$name" 802-11-wireless.mode ap
@@ -122,7 +119,6 @@ ensure_radio_on() {
         sudo nmcli radio wifi on
         sleep 1
     fi
-    # Also unblock rfkill
     if rfkill list | grep -q "Soft blocked: yes"; then
         echo -e "${YELLOW}RF‑kill detected, unblocking...${NC}"
         sudo rfkill unblock wifi
@@ -135,47 +131,29 @@ ensure_radio_on() {
 # -------------------------------------------------------------------
 switch_to_client() {
     echo -e "${YELLOW}Switching to Client Mode...${NC}"
-    
-    # Bring down AP connection if active
     local cur=$(get_current_profile)
     [ -n "$cur" ] && sudo nmcli connection down "$cur" 2>/dev/null
-    
-    # Reset interface and ensure radio is ON
     reset_wlan0
     ensure_radio_on
-    
-    # Restart wpa_supplicant
     sudo systemctl unmask wpa_supplicant 2>/dev/null || true
     sudo systemctl enable wpa_supplicant
     sudo systemctl restart wpa_supplicant
-    
-    # Let NetworkManager manage wlan0
     sudo nmcli device set wlan0 managed yes
-    
     echo -e "${GREEN}✓ Client mode ready (radio ON)${NC}"
 }
 
 switch_to_ap() {
     local cur=$(get_current_profile)
     if [ -z "$cur" ]; then
-        echo -e "${RED}No hotspot profile selected. Run 'wifi ap-create' first.${NC}"
+        echo -e "${RED}No hotspot profile selected. Run 'wifi ap-setup' first.${NC}"
         return 1
     fi
-    
     echo -e "${YELLOW}Switching to AP Mode...${NC}"
-    
-    # Stop client processes
     sudo systemctl stop wpa_supplicant 2>/dev/null
     sudo pkill -f wpa_supplicant 2>/dev/null
-    
-    # Reset interface and ensure radio is ON (AP mode needs radio on)
     reset_wlan0
     ensure_radio_on
-    
-    # Load profile (creates/updates connection)
     load_profile "$cur"
-    
-    # Bring up AP connection
     if sudo nmcli connection up "$cur" 2>/dev/null; then
         echo -e "${GREEN}✓ AP mode enabled with profile: $cur${NC}"
         return 0
@@ -239,6 +217,32 @@ case "$1" in
         ;;
     ap)
         switch_to_ap
+        ;;
+    ap-setup)
+        echo -e "${YELLOW}Hotspot Setup (one‑time configuration)${NC}"
+        echo ""
+        read -p "Enter profile name (no spaces, e.g., myhotspot): " prof_name
+        if [ -z "$prof_name" ]; then
+            echo -e "${RED}Profile name required${NC}"
+            exit 1
+        fi
+        read -p "Enter Wi-Fi SSID (network name): " ssid
+        if [ -z "$ssid" ]; then
+            echo -e "${RED}SSID required${NC}"
+            exit 1
+        fi
+        read -s -p "Enter password (min 8 chars, leave blank for open network): " pass
+        echo ""
+        if [ -n "$pass" ] && [ ${#pass} -lt 8 ]; then
+            echo -e "${RED}Password must be at least 8 characters. Using default 'raspberry123'.${NC}"
+            pass="raspberry123"
+        fi
+        # Create the profile
+        save_profile "$prof_name" "$ssid" "$pass"
+        save_current_profile "$prof_name"
+        echo -e "${GREEN}✓ Hotspot profile '$prof_name' created and selected.${NC}"
+        echo -e "${YELLOW}To start the hotspot now, run: wifi ap${NC}"
+        echo -e "${YELLOW}To start automatically on boot, the profile will be used when you run 'wifi ap'.${NC}"
         ;;
     ap-create)
         echo -e "${YELLOW}Create new hotspot profile...${NC}"
@@ -335,9 +339,9 @@ ${YELLOW}Client Mode:${NC}
   wifi connect   - Connect to a network
 
 ${YELLOW}AP Mode (Hotspot):${NC}
+  wifi ap-setup  - One‑time configuration (SSID, password)
   wifi ap        - Start AP mode with current profile
   wifi ap-off    - Turn off AP mode (back to client)
-  wifi ap-create - Create a new hotspot profile
   wifi ap-list   - List all saved profiles
   wifi ap-use    - Select a profile to use
   wifi ap-delete - Delete a profile
@@ -373,7 +377,7 @@ if [ -z "$1" ]; then
         echo -e "${BLUE}Options:${NC}"
         echo "1)  Switch to Client Mode (connect to Wi-Fi)"
         echo "2)  Switch to AP Mode (start hotspot)"
-        echo "3)  Create new hotspot profile"
+        echo "3)  Configure Hotspot (ap-setup)"
         echo "4)  List saved profiles"
         echo "5)  Select/Use a profile"
         echo "6)  Delete a profile"
@@ -391,19 +395,22 @@ if [ -z "$1" ]; then
             1) switch_to_client; read -p "Press Enter..." ;;
             2) switch_to_ap; read -p "Press Enter..." ;;
             3)
-                echo -e "${YELLOW}Create new profile...${NC}"
+                echo -e "${YELLOW}Hotspot Setup...${NC}"
                 read -p "Profile name (no spaces): " prof_name
                 if [ -n "$prof_name" ]; then
                     read -p "SSID: " ssid
                     if [ -n "$ssid" ]; then
-                        read -s -p "Password (min 8 chars): " pass
+                        read -s -p "Password (min 8 chars, blank for open): " pass
                         echo ""
-                        if [ ${#pass} -ge 8 ]; then
-                            save_profile "$prof_name" "$ssid" "$pass"
-                            echo -e "${GREEN}✓ Profile created${NC}"
-                        else
-                            echo -e "${RED}Password too short${NC}"
+                        if [ -z "$pass" ]; then
+                            pass=""
+                        elif [ ${#pass} -lt 8 ]; then
+                            echo -e "${RED}Password too short, using default 'raspberry123'${NC}"
+                            pass="raspberry123"
                         fi
+                        save_profile "$prof_name" "$ssid" "$pass"
+                        save_current_profile "$prof_name"
+                        echo -e "${GREEN}✓ Profile '$prof_name' created and selected.${NC}"
                     else
                         echo -e "${RED}SSID required${NC}"
                     fi
