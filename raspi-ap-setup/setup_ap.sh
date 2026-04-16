@@ -1,7 +1,6 @@
 #!/bin/bash
 # Raspberry Pi 4B - Complete Access Point Setup
-# Works with modern Raspberry Pi OS (NetworkManager)
-# All-in-One setup with SSH, avahi, and AP configuration
+# Works without NetworkManager conflicts
 
 set -e
 
@@ -29,7 +28,7 @@ DEFAULT_IP="192.168.50.1"
 DEFAULT_SSID="RPi_Network"
 DEFAULT_PASSWORD="raspberry123"
 
-# Get user input (only if interactive)
+# Get user input
 if [ "$INTERACTIVE" = true ]; then
     echo -e "${YELLOW}Press Enter to use default values${NC}\n"
     
@@ -60,43 +59,39 @@ if [ "$INTERACTIVE" = true ]; then
         exit 1
     fi
 else
-    # Non-interactive mode - use defaults
     HOSTNAME="$DEFAULT_HOSTNAME"
     STATIC_IP="$DEFAULT_IP"
     SSID="$DEFAULT_SSID"
     PASSWORD="$DEFAULT_PASSWORD"
-    
-    echo -e "${YELLOW}Non-interactive mode. Using defaults:${NC}"
-    echo -e "  Hostname: ${GREEN}$HOSTNAME${NC}"
-    echo -e "  AP IP: ${GREEN}$STATIC_IP${NC}"
-    echo -e "  SSID: ${GREEN}$SSID${NC}"
-    echo ""
-    sleep 2
+    echo -e "${YELLOW}Using defaults: $SSID @ $STATIC_IP${NC}"
 fi
+
+# Calculate network prefix
+NETWORK_PREFIX=$(echo $STATIC_IP | cut -d. -f1-3)
 
 # ============================================
 # Step 1: Update system
 # ============================================
-echo -e "\n${GREEN}[1/8] Updating system...${NC}"
+echo -e "\n${GREEN}[1/7] Updating system...${NC}"
 sudo apt update -qq
 
 # ============================================
-# Step 2: Install required packages
+# Step 2: Install packages
 # ============================================
-echo -e "\n${GREEN}[2/8] Installing packages...${NC}"
+echo -e "\n${GREEN}[2/7] Installing packages...${NC}"
 sudo apt install -y hostapd dnsmasq avahi-daemon iptables
 
 # ============================================
 # Step 3: Enable SSH
 # ============================================
-echo -e "\n${GREEN}[3/8] Enabling SSH...${NC}"
+echo -e "\n${GREEN}[3/7] Enabling SSH...${NC}"
 sudo systemctl enable ssh
 sudo systemctl start ssh
 
 # ============================================
 # Step 4: Set hostname
 # ============================================
-echo -e "\n${GREEN}[4/8] Setting hostname...${NC}"
+echo -e "\n${GREEN}[4/7] Setting hostname...${NC}"
 echo "$HOSTNAME" | sudo tee /etc/hostname > /dev/null
 
 # Update hosts file
@@ -107,49 +102,24 @@ else
 fi
 
 # ============================================
-# Step 5: Configure static IP
+# Step 5: Stop conflicting services
 # ============================================
-echo -e "\n${GREEN}[5/8] Configuring static IP...${NC}"
-
-# Stop services first
+echo -e "\n${GREEN}[5/7] Stopping conflicting services...${NC}"
 sudo systemctl stop wpa_supplicant 2>/dev/null || true
 sudo systemctl stop hostapd 2>/dev/null || true
 sudo systemctl stop dnsmasq 2>/dev/null || true
 
-# For NetworkManager (modern Raspberry Pi OS)
+# Disable NetworkManager for wlan0 if it exists
 if command -v nmcli &> /dev/null; then
-    # Remove existing connection if exists
-    sudo nmcli connection delete AP-Hotspot 2>/dev/null || true
-    
-    # Create new hotspot connection
-    sudo nmcli connection add type wifi ifname wlan0 con-name AP-Hotspot autoconnect no
-    sudo nmcli connection modify AP-Hotspot 802-11-wireless.mode ap
-    sudo nmcli connection modify AP-Hotspot 802-11-wireless.ssid "$SSID"
-    sudo nmcli connection modify AP-Hotspot wifi-sec.key-mgmt wpa-psk
-    sudo nmcli connection modify AP-Hotspot wifi-sec.psk "$PASSWORD"
-    sudo nmcli connection modify AP-Hotspot ipv4.method manual
-    sudo nmcli connection modify AP-Hotspot ipv4.addresses ${STATIC_IP}/24
-    sudo nmcli connection modify AP-Hotspot ipv4.gateway $STATIC_IP
-    sudo nmcli connection modify AP-Hotspot ipv4.dns "8.8.8.8"
-    
-    # Disable wpa_supplicant
-    sudo systemctl disable wpa_supplicant 2>/dev/null || true
-else
-    # Fallback to dhcpcd (older Raspberry Pi OS)
-    sudo sed -i '/^interface wlan0/,/^$/d' /etc/dhcpcd.conf
-    sudo cat >> /etc/dhcpcd.conf << EOF
-
-interface wlan0
-    static ip_address=$STATIC_IP/24
-    nohook wpa_supplicant
-EOF
+    sudo nmcli device set wlan0 managed no 2>/dev/null || true
 fi
 
 # ============================================
-# Step 6: Configure hostapd (fallback)
+# Step 6: Configure AP
 # ============================================
-echo -e "\n${GREEN}[6/8] Configuring hostapd...${NC}"
+echo -e "\n${GREEN}[6/7] Configuring Access Point...${NC}"
 
+# Create hostapd config
 sudo tee /etc/hostapd/hostapd.conf > /dev/null << EOF
 interface=wlan0
 driver=nl80211
@@ -167,16 +137,10 @@ wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 EOF
 
-# Point hostapd to config file
+# Configure hostapd defaults
 sudo sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
 
-# ============================================
-# Step 7: Configure dnsmasq
-# ============================================
-echo -e "\n${GREEN}[7/8] Configuring dnsmasq...${NC}"
-
-NETWORK_PREFIX=$(echo $STATIC_IP | cut -d. -f1-3)
-
+# Create dnsmasq config
 sudo tee /etc/dnsmasq.conf > /dev/null << EOF
 interface=wlan0
 dhcp-range=${NETWORK_PREFIX}.10,${NETWORK_PREFIX}.100,255.255.255.0,24h
@@ -184,29 +148,35 @@ dhcp-option=3,$STATIC_IP
 dhcp-option=6,$STATIC_IP
 server=8.8.8.8
 server=8.8.4.4
-log-queries
-log-dhcp
 EOF
 
-# ============================================
-# Step 8: Enable and start services
-# ============================================
-echo -e "\n${GREEN}[8/8] Starting services...${NC}"
+# Create dhcpcd config (if it exists)
+if command -v dhcpcd &> /dev/null; then
+    sudo sed -i '/^interface wlan0/,/^$/d' /etc/dhcpcd.conf
+    sudo cat >> /etc/dhcpcd.conf << EOF
 
-# Enable services
-sudo systemctl unmask hostapd 2>/dev/null || true
-sudo systemctl enable hostapd
-sudo systemctl enable dnsmasq
-sudo systemctl enable avahi-daemon
+interface wlan0
+    static ip_address=$STATIC_IP/24
+    nohook wpa_supplicant
+EOF
+fi
 
-# Start services
-sudo systemctl restart hostapd
-sudo systemctl restart dnsmasq
-sudo systemctl restart avahi-daemon
-
-# Set IP on wlan0 if not already set
+# Set static IP manually
 sudo ip addr add ${STATIC_IP}/24 dev wlan0 2>/dev/null || true
 sudo ip link set wlan0 up
+
+# ============================================
+# Step 7: Start services
+# ============================================
+echo -e "\n${GREEN}[7/7] Starting services...${NC}"
+
+sudo systemctl unmask hostapd 2>/dev/null || true
+sudo systemctl enable hostapd
+sudo systemctl start hostapd
+sudo systemctl enable dnsmasq
+sudo systemctl start dnsmasq
+sudo systemctl enable avahi-daemon
+sudo systemctl restart avahi-daemon
 
 # ============================================
 # Done!
@@ -222,8 +192,8 @@ echo -e "  SSID:      ${GREEN}$SSID${NC}"
 echo -e "  Password:  ${GREEN}$PASSWORD${NC}"
 echo ""
 echo -e "${BLUE}SSH Access after reboot:${NC}"
-echo -e "  ${GREEN}ssh ceej@$HOSTNAME.local${NC}"
-echo -e "  ${GREEN}ssh ceej@$STATIC_IP${NC}"
+echo -e "  ${GREEN}ssh $USER@$HOSTNAME.local${NC}"
+echo -e "  ${GREEN}ssh $USER@$STATIC_IP${NC}"
 echo ""
 echo -e "${YELLOW}After reboot, look for Wi-Fi network: ${GREEN}$SSID${NC}"
 echo ""
