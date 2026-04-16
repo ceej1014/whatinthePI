@@ -253,7 +253,7 @@ case $choice in
         create_aliases
         create_helper_scripts
         setup_welcome
-        # Use the new wifi ap-setup command
+        # Use the new unified wifi command for AP setup
         ~/whatinthePI/wifi.sh ap-setup
         reboot_with_countdown
         ;;
@@ -273,7 +273,6 @@ case $choice in
         setup_welcome
         echo -e "${GREEN}✓ Tools installed! Now running AP setup...${NC}"
         sleep 2
-        # Use the new wifi ap-setup command
         ~/whatinthePI/wifi.sh ap-setup
         reboot_with_countdown
         ;;
@@ -290,7 +289,6 @@ case $choice in
         echo -e "${YELLOW}Changing hostname...${NC}"
         if [ -f ~/whatinthePI/changename.sh ]; then
             ~/whatinthePI/changename.sh
-            # The changename script already asks for reboot, but we'll add a countdown as well
             reboot_with_countdown
         else
             echo -e "${RED}Run option 2 or 3 first.${NC}"
@@ -300,7 +298,6 @@ case $choice in
         echo -e "${YELLOW}Changing AP IP address...${NC}"
         if [ -f ~/whatinthePI/changeip.sh ]; then
             ~/whatinthePI/changeip.sh
-            # changeip script may not reboot, so we add a countdown
             echo -e "${YELLOW}AP IP changed. A reboot is recommended.${NC}"
             reboot_with_countdown
         else
@@ -311,7 +308,6 @@ case $choice in
         echo -e "${YELLOW}Running uninstaller...${NC}"
         if [ -f ~/whatinthePI/uninstall.sh ]; then
             ~/whatinthePI/uninstall.sh
-            # Uninstaller may reboot on its own, but if not, we offer reboot
             echo -e "${YELLOW}Uninstall complete. You may want to reboot.${NC}"
             read -p "Reboot now? (y/n): " -n 1 -r
             echo
