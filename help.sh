@@ -32,8 +32,7 @@ echo ""
 if [ -f "$SCRIPT_DIR/raspi-ap-setup/setup_ap.sh" ]; then
     echo -e "${GREEN}🔵 AP SETUP COMMANDS:${NC}"
     echo -e "  ${YELLOW}apsetup${NC}              - Run interactive AP setup"
-    echo -e "  ${YELLOW}sudo apsetup${NC}         - Run AP setup (if alias not working)"
-    echo -e "  ${YELLOW}apon${NC}                 - Turn on AP mode (same as apsetup)"
+    echo -e "  ${YELLOW}apon${NC}                 - Turn on AP mode"
     echo -e "  ${YELLOW}apoff${NC}                - Turn off AP mode (back to client mode)"
     echo ""
 fi
@@ -42,15 +41,12 @@ fi
 if [ -f "$SCRIPT_DIR/wifi_manager/wifi_manager.sh" ]; then
     echo -e "${GREEN}📡 WI-FI MANAGER COMMANDS:${NC}"
     echo -e "  ${YELLOW}wifiman${NC}              - Open interactive Wi-Fi Manager menu"
-    echo -e "  ${YELLOW}wifi on${NC}              - Turn Wi-Fi ON"
-    echo -e "  ${YELLOW}wifi off${NC}             - Turn Wi-Fi OFF"
-    echo -e "  ${YELLOW}wifi scan${NC}            - Scan for available networks"
-    echo -e "  ${YELLOW}wifi connect${NC}         - Connect to a Wi-Fi network"
-    echo -e "  ${YELLOW}wifi status${NC}          - Show current connection status"
-    echo -e "  ${YELLOW}wifi disconnect${NC}      - Disconnect from current network"
-    echo -e "  ${YELLOW}wifi forget${NC}          - Forget a saved network"
-    echo -e "  ${YELLOW}wifi list${NC}            - List all saved networks"
-    echo -e "  ${YELLOW}wifi signal${NC}          - Show signal strength of current network"
+    echo -e "  ${YELLOW}wifi on${NC}              - Switch to Client mode (connect to Wi-Fi)"
+    echo -e "  ${YELLOW}wifi off${NC}             - Turn Wi-Fi OFF completely"
+    echo -e "  ${YELLOW}wifi ap${NC}              - Switch to AP mode (create hotspot)"
+    echo -e "  ${YELLOW}wifi status${NC}          - Show current mode and connection"
+    echo -e "  ${YELLOW}wifi scan${NC}            - Scan for available networks (client mode only)"
+    echo -e "  ${YELLOW}wifi connect${NC}         - Connect to a Wi-Fi network (client mode only)"
     echo ""
 fi
 
@@ -100,7 +96,7 @@ echo ""
 
 # Quick reference
 echo -e "${BLUE}📖 QUICK REFERENCE:${NC}"
-echo -e "  SSH into Pi:    ${GREEN}ssh ceej@$(hostname).local${NC}"
+echo -e "  SSH into Pi:    ${GREEN}ssh $USER@$(hostname).local${NC}"
 echo -e "  Current IP:     ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
 echo -e "  Current Wi-Fi:  ${GREEN}$(iwgetid -r 2>/dev/null || echo 'Not connected')${NC}"
 echo ""
