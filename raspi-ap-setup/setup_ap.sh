@@ -1,6 +1,5 @@
 #!/bin/bash
-# Raspberry Pi 4B - Guaranteed Working Access Point Setup
-# Uses 192.168.50.1 as default IP (DO NOT use 1.1.1.1 or other public IPs)
+# Raspberry Pi 4B - Access Point Setup (NetworkManager compatible)
 
 set -e
 
@@ -15,15 +14,14 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Raspberry Pi 4B - Access Point Setup${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# Default values - USE PRIVATE IP RANGES ONLY!
+# Default values
 DEFAULT_HOSTNAME="ceejay"
 DEFAULT_USERNAME="ceej"
-DEFAULT_IP="192.168.50.1"  # DO NOT CHANGE TO 1.1.1.1
-DEFAULT_SSID="RPi_Network"
+DEFAULT_IP="10.1.1.1"
+DEFAULT_SSID="raspberry"
 DEFAULT_PASSWORD="raspberry123"
 
-echo -e "${YELLOW}IMPORTANT: Use a private IP range like 192.168.x.x or 10.x.x.x${NC}"
-echo -e "${YELLOW}DO NOT use public IPs like 1.1.1.1 (that's Cloudflare DNS)${NC}"
+echo -e "${YELLOW}Using IP: $DEFAULT_IP${NC}"
 echo ""
 
 # Get user input
@@ -36,13 +34,6 @@ USERNAME=${USERNAME:-$DEFAULT_USERNAME}
 read -p "Enter AP IP address [$DEFAULT_IP]: " STATIC_IP
 STATIC_IP=${STATIC_IP:-$DEFAULT_IP}
 
-# Validate IP is not a public DNS
-if [[ "$STATIC_IP" == "1.1.1.1" ]] || [[ "$STATIC_IP" == "8.8.8.8" ]] || [[ "$STATIC_IP" == "8.8.4.4" ]]; then
-    echo -e "${RED}ERROR: $STATIC_IP is a public DNS server!${NC}"
-    echo -e "${RED}Please use a private IP like 192.168.50.1 or 10.0.0.1${NC}"
-    exit 1
-fi
-
 read -p "Enter Wi-Fi SSID (network name) [$DEFAULT_SSID]: " SSID
 SSID=${SSID:-$DEFAULT_SSID}
 
@@ -52,6 +43,7 @@ echo ""
 
 if [ -z "$PASSWORD" ]; then
     echo -e "${YELLOW}Open network selected (no password)${NC}"
+    PASSWORD=""
 fi
 
 # Confirm
@@ -91,25 +83,21 @@ sudo apt update
 sudo apt install -y hostapd dnsmasq
 
 echo -e "\n${GREEN}[2/6] Stopping services...${NC}"
-sudo systemctl stop hostapd
-sudo systemctl stop dnsmasq
-sudo systemctl stop wpa_supplicant
+sudo systemctl stop hostapd 2>/dev/null || true
+sudo systemctl stop dnsmasq 2>/dev/null || true
+sudo systemctl stop wpa_supplicant 2>/dev/null || true
 sudo pkill hostapd 2>/dev/null || true
 
-echo -e "\n${GREEN}[3/6] Configuring static IP...${NC}"
+echo -e "\n${GREEN}[3/6] Configuring static IP with NetworkManager...${NC}"
 
-# Configure dhcpcd
-sudo tee -a /etc/dhcpcd.conf << EOF
+# Disable NetworkManager for wlan0
+sudo nmcli device set wlan0 managed no 2>/dev/null || true
 
-# AP Setup
-interface wlan0
-    static ip_address=$STATIC_IP/24
-    nohook wpa_supplicant
-EOF
-
-# Restart dhcpcd
-sudo systemctl restart dhcpcd
-sleep 3
+# Set static IP using ip command
+sudo ip link set wlan0 down
+sudo ip addr flush dev wlan0
+sudo ip addr add ${STATIC_IP}/24 dev wlan0
+sudo ip link set wlan0 up
 
 echo -e "\n${GREEN}[4/6] Configuring hostapd...${NC}"
 
@@ -165,17 +153,12 @@ EOF
 
 echo -e "\n${GREEN}[6/6] Starting services...${NC}"
 
-# Set IP on wlan0
-sudo ip link set wlan0 down
-sudo ip addr flush dev wlan0
-sudo ip addr add ${STATIC_IP}/24 dev wlan0
-sudo ip link set wlan0 up
-
-# Start services
+# Start hostapd
 sudo systemctl unmask hostapd
 sudo systemctl enable hostapd
 sudo systemctl start hostapd
 
+# Start dnsmasq
 sudo systemctl enable dnsmasq
 sudo systemctl start dnsmasq
 
@@ -192,15 +175,17 @@ sudo sysctl -w net.ipv4.ip_forward=1
 echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
 
 # ============================================
-# Verify services are running
+# Verify services
 # ============================================
 echo -e "\n${GREEN}Verifying services...${NC}"
+
+sleep 2
 
 if systemctl is-active --quiet hostapd; then
     echo -e "${GREEN}✓ hostapd is running${NC}"
 else
     echo -e "${RED}✗ hostapd failed to start${NC}"
-    echo "Check logs: sudo journalctl -u hostapd"
+    echo "Check: sudo journalctl -u hostapd"
 fi
 
 if systemctl is-active --quiet dnsmasq; then
@@ -209,8 +194,7 @@ else
     echo -e "${RED}✗ dnsmasq failed to start${NC}"
 fi
 
-# Show wlan0 IP
-echo -e "\n${GREEN}wlan0 IP address:${NC}"
+echo -e "\n${GREEN}wlan0 IP:${NC}"
 ip addr show wlan0 | grep "inet "
 
 # ============================================
@@ -227,18 +211,20 @@ if [ -z "$PASSWORD" ]; then
 else
     echo -e "  Password:  ${GREEN}$PASSWORD${NC}"
 fi
-echo -e "  IP Range:  ${GREEN}${NETWORK_PREFIX}.10 - ${NETWORK_PREFIX}.100${NC}"
+echo -e "  IP:        ${GREEN}$STATIC_IP${NC}"
 echo ""
 echo -e "${BLUE}SSH Access:${NC}"
 echo -e "  ${GREEN}ssh $USERNAME@$HOSTNAME.local${NC}"
 echo -e "  ${GREEN}ssh $USERNAME@$STATIC_IP${NC}"
 echo ""
-echo -e "${YELLOW}Rebooting in 10 seconds...${NC}"
-echo -e "${YELLOW}After reboot, look for Wi-Fi: $SSID${NC}"
 
-for i in {10..1}; do
-    echo -ne "\rRebooting in $i seconds... "
-    sleep 1
-done
-
-sudo reboot
+# Ask about reboot
+read -p "Reboot now? (y/n): " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo -e "${YELLOW}Rebooting...${NC}"
+    sudo reboot
+else
+    echo -e "${YELLOW}Remember to reboot later for changes to take effect${NC}"
+    echo -e "${YELLOW}After reboot, look for Wi-Fi: $SSID${NC}"
+fi
