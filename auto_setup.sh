@@ -24,6 +24,19 @@ else
     INTERACTIVE=false
 fi
 
+# Function to reboot with countdown
+reboot_with_countdown() {
+    echo ""
+    echo -e "${YELLOW}System will reboot in 10 seconds to apply changes.${NC}"
+    echo -e "${YELLOW}Press Ctrl+C to cancel reboot.${NC}"
+    for i in {10..1}; do
+        echo -ne "\rRebooting in $i seconds... "
+        sleep 1
+    done
+    echo -e "\n${GREEN}Rebooting now...${NC}"
+    sudo reboot
+}
+
 clear
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   Raspberry Pi Tools Installer${NC}"
@@ -128,7 +141,7 @@ EOF
         chmod +x ~/whatinthePI/status.sh
     fi
     
-    # The unified wifi.sh is already present from the git clone, just ensure it's executable
+    # Ensure wifi.sh is present and executable
     if [ -f ~/whatinthePI/wifi.sh ]; then
         chmod +x ~/whatinthePI/wifi.sh
     else
@@ -210,7 +223,7 @@ if [ "$INTERACTIVE" = true ]; then
     echo -e "${BLUE}What would you like to do?${NC}"
     echo "1) Setup Access Point (AP Mode) - Create your own Wi-Fi network"
     echo "2) Install all tools + create aliases (no AP setup)"
-    echo "3) Full setup - Install everything + run AP setup ${GREEN}(RECOMMENDED)${NC}"
+    echo -e "3) Full setup - Install everything + run AP setup ${GREEN}(RECOMMENDED)${NC}"
     echo "4) Check for updates"
     echo "5) Change hostname"
     echo "6) Change AP IP address"
@@ -240,8 +253,9 @@ case $choice in
         create_aliases
         create_helper_scripts
         setup_welcome
-        cd raspi-ap-setup
-        sudo ./setup_ap.sh
+        # Use the new wifi ap-setup command
+        ~/whatinthePI/wifi.sh ap-setup
+        reboot_with_countdown
         ;;
     2)
         echo -e "${YELLOW}Installing all tools...${NC}"
@@ -250,6 +264,7 @@ case $choice in
         setup_welcome
         echo -e "${GREEN}✓ All tools installed!${NC}"
         echo -e "${YELLOW}Run 'apsetup' later to configure AP${NC}"
+        # No reboot needed
         ;;
     3)
         echo -e "${YELLOW}Full setup: Installing tools and running AP setup...${NC}"
@@ -258,8 +273,9 @@ case $choice in
         setup_welcome
         echo -e "${GREEN}✓ Tools installed! Now running AP setup...${NC}"
         sleep 2
-        cd raspi-ap-setup
-        sudo ./setup_ap.sh
+        # Use the new wifi ap-setup command
+        ~/whatinthePI/wifi.sh ap-setup
+        reboot_with_countdown
         ;;
     4)
         echo -e "${YELLOW}Checking for updates...${NC}"
@@ -268,11 +284,14 @@ case $choice in
         else
             curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/update.sh | bash
         fi
+        # No reboot needed
         ;;
     5)
         echo -e "${YELLOW}Changing hostname...${NC}"
         if [ -f ~/whatinthePI/changename.sh ]; then
             ~/whatinthePI/changename.sh
+            # The changename script already asks for reboot, but we'll add a countdown as well
+            reboot_with_countdown
         else
             echo -e "${RED}Run option 2 or 3 first.${NC}"
         fi
@@ -281,6 +300,9 @@ case $choice in
         echo -e "${YELLOW}Changing AP IP address...${NC}"
         if [ -f ~/whatinthePI/changeip.sh ]; then
             ~/whatinthePI/changeip.sh
+            # changeip script may not reboot, so we add a countdown
+            echo -e "${YELLOW}AP IP changed. A reboot is recommended.${NC}"
+            reboot_with_countdown
         else
             echo -e "${RED}Run option 2 or 3 first.${NC}"
         fi
@@ -289,6 +311,13 @@ case $choice in
         echo -e "${YELLOW}Running uninstaller...${NC}"
         if [ -f ~/whatinthePI/uninstall.sh ]; then
             ~/whatinthePI/uninstall.sh
+            # Uninstaller may reboot on its own, but if not, we offer reboot
+            echo -e "${YELLOW}Uninstall complete. You may want to reboot.${NC}"
+            read -p "Reboot now? (y/n): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                sudo reboot
+            fi
         else
             curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/uninstall.sh | bash
         fi
