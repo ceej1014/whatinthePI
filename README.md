@@ -19,17 +19,20 @@
 
 ## ✨ What is whatinthePI?
 
-**whatinthePI** is a complete toolkit that transforms your Raspberry Pi 4B into a powerful Wi-Fi access point or a flexible Wi-Fi client manager. With **one command**, you can set up:
+**whatinthePI** is a complete toolkit that turns your Raspberry Pi 4B into a powerful Wi‑Fi access point or a flexible Wi‑Fi client manager.  
+With **one command** you can:
 
-- 🔵 **Access Point Mode** - Create your own Wi-Fi network anywhere
-- 📡 **Wi-Fi Manager** - Interactive menu to control Wi-Fi connections
-- ⚡ **Quick Commands** - Fast Wi-Fi control from the command line
-- 🎨 **Beautiful Login** - Professional welcome screen on SSH
-- 📊 **System Monitor** - Real-time Pi status at your fingertips
+- 🔵 **Create a persistent hotspot** – your own Wi‑Fi network that survives reboots
+- 📡 **Manage Wi‑Fi connections** – interactive menu or quick commands
+- ⚡ **Switch between AP and client modes** instantly
+- 🎨 **Beautiful login banner** with system status
+- 📊 **Real‑time system monitor** (temperature, IP, storage, memory)
+
+All scripts are **NetworkManager‑compatible** and work on Raspberry Pi OS **Bookworm** (the latest).
 
 ---
 
-## 🚀 One-Line Install
+## 🚀 One‑Line Install
 
 ```bash
 bash -c "$(curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/auto_setup.sh)"
