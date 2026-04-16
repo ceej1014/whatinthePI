@@ -15,9 +15,9 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Detect if running interactively (has a terminal)
+# Detect if running interactively
 if [ -t 0 ] && [ -t 1 ]; then
     INTERACTIVE=true
 else
@@ -29,7 +29,7 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   Raspberry Pi Tools Installer${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# Clone the repository if not already present
+# Clone the repository
 if [ ! -d "whatinthePI" ]; then
     echo -e "${YELLOW}Cloning repository...${NC}"
     git clone https://github.com/ceej1014/whatinthePI.git
@@ -52,6 +52,8 @@ chmod +x wifi_manager/*.sh 2>/dev/null || true
 # Function to create aliases
 create_aliases() {
     echo -e "${YELLOW}Creating aliases...${NC}"
+    
+    sed -i '/# Raspberry Pi Tools Aliases/,/wifilist()/d' ~/.bash_aliases 2>/dev/null || true
     
     cat >> ~/.bash_aliases << 'EOF'
 
@@ -106,7 +108,7 @@ wifilist() { sudo grep -E "^[[:space:]]*ssid=" /etc/wpa_supplicant/wpa_supplican
 EOF
 
     source ~/.bash_aliases 2>/dev/null || true
-    echo -e "${GREEN}Aliases created successfully!${NC}"
+    echo -e "${GREEN}✓ Aliases created!${NC}"
 }
 
 # Function to create helper scripts
@@ -156,10 +158,7 @@ case "$1" in
         sudo systemctl restart wpa_supplicant
         sleep 3
         wifistatus;;
-    *)
-        echo "Wi-Fi Helper Commands:"
-        echo "  wifi on/off/scan/status/connect/disconnect/list"
-        ;;
+    *) echo "wifi on/off/scan/status/connect/disconnect/list";;
 esac
 EOF
         chmod +x ~/whatinthePI/wifi_helper.sh
@@ -219,24 +218,25 @@ echo -e "  ${YELLOW}wifiman${NC}     - Wi-Fi manager"
 echo -e "  ${YELLOW}apsetup${NC}     - Setup access point"
 echo ""
 echo -e "${CYAN}========================================${NC}"
+echo -e "${YELLOW}SSH: ssh ${USER}@$(hostname).local${NC}"
+echo -e "${CYAN}========================================${NC}"
 EOF
         chmod +x ~/whatinthePI/welcome.sh
     fi
     
     sudo cp ~/whatinthePI/welcome.sh /etc/profile.d/welcome.sh
     sudo chmod +x /etc/profile.d/welcome.sh
-    echo -e "${GREEN}Welcome message installed!${NC}"
+    echo -e "${GREEN}✓ Welcome message installed!${NC}"
 }
 
-# Determine what to do based on interactive mode
+# Main menu
 if [ "$INTERACTIVE" = true ]; then
-    # Interactive mode - show menu
     echo ""
     echo -e "${BLUE}What would you like to do?${NC}"
     echo "1) Setup Access Point (AP Mode) - Create your own Wi-Fi network"
     echo "2) Install Wi-Fi Manager only - Manage existing Wi-Fi connections"
     echo "3) Install all tools + create aliases (no AP setup)"
-    echo "4) Full setup - Install everything + run AP setup ${GREEN}(RECOMMENDED)${NC}"
+    echo -e "4) Full setup - Install everything + run AP setup ${GREEN}(RECOMMENDED)${NC}"
     echo "5) Check for updates"
     echo "6) Change hostname"
     echo "7) Change AP IP address"
@@ -245,24 +245,18 @@ if [ "$INTERACTIVE" = true ]; then
     echo ""
     read -p "Choose [1-9] (press Enter for option 4): " choice
     
-    # Default to 4 if no input
     if [ -z "$choice" ]; then
         choice=4
-        echo -e "${YELLOW}No input detected. Using default: Option 4 (Full setup)${NC}"
+        echo -e "${YELLOW}Using default: Option 4 (Full setup)${NC}"
         sleep 2
     fi
 else
-    # Non-interactive mode (curl | bash) - automatically run full setup
-    echo -e "${YELLOW}Non-interactive mode detected. Running Full Setup automatically...${NC}"
-    echo -e "${YELLOW}To see interactive menu, run: ./auto_setup.sh after installation${NC}"
-    echo ""
-    sleep 3
+    echo -e "${YELLOW}Non-interactive mode. Running Full Setup...${NC}"
     choice=4
 fi
 
-# Validate choice
 if [[ ! "$choice" =~ ^[1-9]$ ]]; then
-    echo -e "${RED}Invalid option: '$choice'. Exiting.${NC}"
+    echo -e "${RED}Invalid option. Exiting.${NC}"
     exit 1
 fi
 
@@ -280,25 +274,22 @@ case $choice in
         create_aliases
         create_helper_scripts
         setup_welcome
-        echo -e "${GREEN}Wi-Fi Manager installed!${NC}"
+        echo -e "${GREEN}✓ Wi-Fi Manager installed!${NC}"
         ;;
     3)
         echo -e "${YELLOW}Installing all tools...${NC}"
         create_aliases
         create_helper_scripts
         setup_welcome
-        echo -e "${GREEN}All tools installed!${NC}"
-        echo ""
-        echo -e "${BLUE}Available commands:${NC}"
-        echo "  help, quickref, status, welcome, version, update"
-        echo "  changename, changeip, uninstall, wifiman, apsetup, wifi"
+        echo -e "${GREEN}✓ All tools installed!${NC}"
+        echo -e "${YELLOW}Run 'apsetup' later to configure AP${NC}"
         ;;
     4)
         echo -e "${YELLOW}Full setup: Installing tools and running AP setup...${NC}"
         create_aliases
         create_helper_scripts
         setup_welcome
-        echo -e "${GREEN}Tools installed! Now running AP setup...${NC}"
+        echo -e "${GREEN}✓ Tools installed! Now running AP setup...${NC}"
         sleep 2
         cd raspi-ap-setup
         sudo ./setup_ap.sh
@@ -316,7 +307,7 @@ case $choice in
         if [ -f ~/whatinthePI/changename.sh ]; then
             ~/whatinthePI/changename.sh
         else
-            echo -e "${RED}changename.sh not found. Run full setup first.${NC}"
+            echo -e "${RED}Run option 3 or 4 first.${NC}"
         fi
         ;;
     7)
@@ -324,7 +315,7 @@ case $choice in
         if [ -f ~/whatinthePI/changeip.sh ]; then
             ~/whatinthePI/changeip.sh
         else
-            echo -e "${RED}changeip.sh not found. Run full setup first.${NC}"
+            echo -e "${RED}Run option 3 or 4 first.${NC}"
         fi
         ;;
     8)
@@ -343,8 +334,6 @@ esac
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Setup Complete!${NC}"
+echo -e "${GREEN}Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo ""
-echo -e "${YELLOW}Type 'help' to see all available commands${NC}"
-echo -e "${YELLOW}Type 'uninstall' to remove everything${NC}"
+echo -e "${YELLOW}Type 'help' to see all commands${NC}"
