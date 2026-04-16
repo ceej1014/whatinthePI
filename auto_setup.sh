@@ -40,6 +40,7 @@ chmod +x version.sh 2>/dev/null || true
 chmod +x update.sh 2>/dev/null || true
 chmod +x changename.sh 2>/dev/null || true
 chmod +x changeip.sh 2>/dev/null || true
+chmod +x uninstall.sh 2>/dev/null || true
 
 # Function to create aliases
 create_aliases() {
@@ -57,6 +58,7 @@ alias version='~/whatinthePI/version.sh'
 alias update='~/whatinthePI/update.sh'
 alias changename='~/whatinthePI/changename.sh'
 alias changeip='~/whatinthePI/changeip.sh'
+alias uninstall='~/whatinthePI/uninstall.sh'
 alias wifiman='sudo ~/whatinthePI/wifi_manager/wifi_manager.sh'
 alias apsetup='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
 alias apon='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
@@ -297,9 +299,10 @@ echo "4) Full setup - Install everything + run AP setup"
 echo "5) Check for updates"
 echo "6) Change hostname"
 echo "7) Change AP IP address"
-echo "8) Exit"
+echo "8) Uninstall whatinthePI"
+echo "9) Exit"
 echo ""
-read -p "Choose [1-8]: " choice
+read -p "Choose [1-9]: " choice
 
 case $choice in
     1)
@@ -341,6 +344,7 @@ case $choice in
         echo "  update    - Check for updates"
         echo "  changename- Change hostname"
         echo "  changeip  - Change AP IP address"
+        echo "  uninstall - Uninstall all tools"
         echo "  wifiman   - Open Wi-Fi Manager"
         echo "  apsetup   - Run AP setup (when ready)"
         echo "  wifi      - Quick Wi-Fi commands"
@@ -383,6 +387,15 @@ case $choice in
         fi
         ;;
     8)
+        echo -e "${YELLOW}Running uninstaller...${NC}"
+        if [ -f ~/whatinthePI/uninstall.sh ]; then
+            ~/whatinthePI/uninstall.sh
+        else
+            echo -e "${YELLOW}Downloading uninstaller...${NC}"
+            curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/uninstall.sh | bash
+        fi
+        ;;
+    9)
         echo -e "${GREEN}Exiting...${NC}"
         exit 0
         ;;
@@ -403,6 +416,7 @@ echo -e "${YELLOW}To check system status, type:${NC} ${GREEN}status${NC}"
 echo -e "${YELLOW}To check for updates, type:${NC} ${GREEN}update${NC}"
 echo -e "${YELLOW}To change hostname, type:${NC} ${GREEN}changename${NC}"
 echo -e "${YELLOW}To change AP IP, type:${NC} ${GREEN}changeip${NC}"
+echo -e "${YELLOW}To uninstall, type:${NC} ${GREEN}uninstall${NC}"
 echo -e "${YELLOW}The welcome message will appear every time you SSH in!${NC}"
 echo ""
 echo -e "${BLUE}Tip: Run 'source ~/.bashrc' to ensure all aliases work${NC}"
