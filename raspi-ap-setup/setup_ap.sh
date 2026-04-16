@@ -9,6 +9,7 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${GREEN}========================================${NC}"
@@ -68,7 +69,7 @@ sudo apt update
 sudo apt upgrade -y
 
 # Install required packages
-sudo apt install -y hostapd dnsmasq
+sudo apt install -y hostapd dnsmasq iptables
 
 # Stop services while configuring
 sudo systemctl stop hostapd 2>/dev/null || true
@@ -141,18 +142,33 @@ sudo sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/de
 
 # Enable IP forwarding for internet sharing (optional)
 sudo sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+sudo sysctl -p
 
 # Set up NAT if eth0 is connected (optional internet sharing)
-sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true
-sudo sh -c "iptables-save > /etc/iptables.ipv4.nat"
-
-# Add iptables restore to rc.local
-sudo sed -i '/^exit 0/d' /etc/rc.local 2>/dev/null || true
-sudo sed -i '/iptables-restore/d' /etc/rc.local 2>/dev/null || true
-if ! grep -q "iptables-restore" /etc/rc.local; then
-    sudo sed -i '/^# Print the IP address/i iptables-restore < /etc/iptables.ipv4.nat\n' /etc/rc.local 2>/dev/null || true
+# Check if iptables is available, if not install it
+if ! command -v iptables &> /dev/null; then
+    sudo apt install -y iptables
 fi
-echo "exit 0" | sudo tee -a /etc/rc.local > /dev/null
+
+# Add iptables rule for NAT
+sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true
+
+# Save iptables rules (different methods for different systems)
+if command -v iptables-save &> /dev/null; then
+    sudo sh -c "iptables-save > /etc/iptables.ipv4.nat"
+    
+    # Add iptables restore to rc.local
+    sudo sed -i '/^exit 0/d' /etc/rc.local 2>/dev/null || true
+    sudo sed -i '/iptables-restore/d' /etc/rc.local 2>/dev/null || true
+    if ! grep -q "iptables-restore" /etc/rc.local 2>/dev/null; then
+        sudo sed -i '/^# Print the IP address/i iptables-restore < /etc/iptables.ipv4.nat\n' /etc/rc.local 2>/dev/null || true
+    fi
+    echo "exit 0" | sudo tee -a /etc/rc.local > /dev/null
+else
+    # Alternative method using netfilter-persistent
+    sudo apt install -y iptables-persistent
+    sudo netfilter-persistent save
+fi
 
 # Set hostname
 echo "$HOSTNAME" | sudo tee /etc/hostname > /dev/null
