@@ -31,24 +31,25 @@ echo ""
 # AP Setup commands
 if [ -f "$SCRIPT_DIR/raspi-ap-setup/setup_ap.sh" ]; then
     echo -e "${GREEN}🔵 AP SETUP COMMANDS:${NC}"
-    echo -e "  ${YELLOW}apsetup${NC}              - Run interactive AP setup"
-    echo -e "  ${YELLOW}apon${NC}                 - Turn on AP mode"
-    echo -e "  ${YELLOW}apoff${NC}                - Turn off AP mode (back to client mode)"
+    echo -e "  ${YELLOW}apsetup${NC}              - Configure Access Point (SSID, password)"
+    echo -e "  ${YELLOW}apon${NC}                 - Turn on AP mode (hotspot)"
+    echo -e "  ${YELLOW}apoff${NC}                - Turn off AP mode (back to client)"
     echo ""
 fi
 
-# Wi-Fi Manager commands
-if [ -f "$SCRIPT_DIR/wifi_manager/wifi_manager.sh" ]; then
-    echo -e "${GREEN}📡 WI-FI MANAGER COMMANDS:${NC}"
-    echo -e "  ${YELLOW}wifiman${NC}              - Open interactive Wi-Fi Manager menu"
-    echo -e "  ${YELLOW}wifi on${NC}              - Switch to Client mode (connect to Wi-Fi)"
-    echo -e "  ${YELLOW}wifi off${NC}             - Turn Wi-Fi OFF completely"
-    echo -e "  ${YELLOW}wifi ap${NC}              - Switch to AP mode (create hotspot)"
-    echo -e "  ${YELLOW}wifi status${NC}          - Show current mode and connection"
-    echo -e "  ${YELLOW}wifi scan${NC}            - Scan for available networks (client mode only)"
-    echo -e "  ${YELLOW}wifi connect${NC}         - Connect to a Wi-Fi network (client mode only)"
-    echo ""
-fi
+# Wi-Fi Manager commands (unified)
+echo -e "${GREEN}📡 WI-FI MANAGER (UNIFIED) COMMANDS:${NC}"
+echo -e "  ${YELLOW}wifi${NC}                 - Unified Wi-Fi manager (menu or commands)"
+echo -e "  ${YELLOW}wifiman${NC}              - Same as 'wifi' (opens interactive menu)"
+echo -e "  ${YELLOW}wifi on${NC}              - Switch to Client mode"
+echo -e "  ${YELLOW}wifi off${NC}             - Turn Wi-Fi OFF completely"
+echo -e "  ${YELLOW}wifi ap${NC}              - Switch to AP mode (hotspot)"
+echo -e "  ${YELLOW}wifi ap-setup${NC}        - Configure Access Point (SSID, password)"
+echo -e "  ${YELLOW}wifi ap-off${NC}          - Turn off AP mode, back to client"
+echo -e "  ${YELLOW}wifi status${NC}          - Show current mode and IPs"
+echo -e "  ${YELLOW}wifi scan${NC}            - Scan for networks (client mode only)"
+echo -e "  ${YELLOW}wifi connect${NC}         - Connect to a network (client mode only)"
+echo ""
 
 # System commands
 echo -e "${GREEN}🖥️  SYSTEM COMMANDS:${NC}"
