@@ -106,7 +106,7 @@ wifiscan() {
 wifistatus() { 
     if systemctl is-active --quiet hostapd; then
         echo "Mode: ACCESS POINT"
-        echo "IP: $(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)"
+        echo "AP IP: $(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)"
     elif iwgetid -r > /dev/null 2>&1; then
         echo "Connected to: $(iwgetid -r)"
         echo "IP: $(hostname -I | awk '{print $1}')"
@@ -126,23 +126,100 @@ create_helper_scripts() {
     if [ ! -f ~/whatinthePI/status.sh ]; then
         cat > ~/whatinthePI/status.sh << 'EOF'
 #!/bin/bash
-echo "========================================="
-echo "System Status"
-echo "========================================="
-echo "Hostname: $(hostname)"
-echo "IP Address: $(hostname -I | awk '{print $1}')"
-if systemctl is-active --quiet hostapd; then
-    echo "Mode: ACCESS POINT (broadcasting Wi-Fi)"
-else
-    echo "Wi-Fi: $(iwgetid -r 2>/dev/null || echo 'Not connected')"
-fi
-echo "Uptime: $(uptime -p)"
+# System Status - Shows Ethernet, Wi-Fi, and AP mode correctly
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+is_ap_mode() { 
+    systemctl is-active --quiet hostapd 2>/dev/null && [ -f /etc/hostapd/hostapd.conf ]
+}
+
+clear
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║                 SYSTEM STATUS - RASPBERRY PI               ║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# System Information
+echo -e "${GREEN}📊 SYSTEM INFORMATION${NC}"
+echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
+echo -e "  Hostname:        ${YELLOW}$(hostname)${NC}"
+echo -e "  Kernel:          $(uname -r)"
+echo -e "  Uptime:          $(uptime -p | sed 's/up //')"
+echo -e "  Load Average:    $(uptime | awk -F'load average:' '{print $2}')"
+echo -e "  Users Online:    $(who | wc -l)"
+echo ""
+
+# Hardware Information
 if command -v vcgencmd &> /dev/null; then
-    echo "Temperature: $(vcgencmd measure_temp | cut -d= -f2)"
+    echo -e "${GREEN}🖥️  HARDWARE INFORMATION${NC}"
+    echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
+    echo -e "  Temperature:     ${YELLOW}$(vcgencmd measure_temp | cut -d= -f2)${NC}"
+    echo -e "  Clock Speed:     $(vcgencmd measure_clock arm | cut -d= -f2 | awk '{printf "%.2f MHz\n", $1/1000000}')"
+    echo -e "  Voltage:         $(vcgencmd measure_volts core | cut -d= -f2)"
+    echo ""
 fi
-echo "Storage: $(df -h / | awk 'NR==2 {print $5 " used of " $2}')"
-echo "Memory: $(free -h | awk 'NR==2 {print $3 " used of " $2}')"
-echo "========================================="
+
+# Network Information
+echo -e "${GREEN}🌐 NETWORK INFORMATION${NC}"
+echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
+
+# Wi-Fi / AP Mode
+if is_ap_mode; then
+    echo -e "  Mode:            ${YELLOW}ACCESS POINT${NC}"
+    AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    SSID=$(sudo grep "^ssid" /etc/hostapd/hostapd.conf 2>/dev/null | cut -d= -f2)
+    echo -e "  AP SSID:         ${GREEN}$SSID${NC}"
+    echo -e "  AP IP:           ${GREEN}$AP_IP${NC}"
+elif iwgetid -r > /dev/null 2>&1; then
+    echo -e "  Mode:            ${GREEN}CLIENT (connected)${NC}"
+    echo -e "  Wi-Fi SSID:      ${GREEN}$(iwgetid -r)${NC}"
+    echo -e "  Wi-Fi IP:        ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
+    echo -e "  Signal:          $(iwconfig wlan0 2>/dev/null | grep -i quality | awk '{print $2}' | cut -d= -f2)"
+elif systemctl is-active --quiet wpa_supplicant; then
+    echo -e "  Mode:            ${YELLOW}CLIENT (not connected)${NC}"
+else
+    echo -e "  Mode:            ${RED}Wi-Fi DISABLED${NC}"
+fi
+
+# Ethernet Status
+if ip link show eth0 | grep -q "state UP"; then
+    ETH_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    echo -e "  Ethernet:        ${GREEN}Connected${NC} - $ETH_IP"
+else
+    echo -e "  Ethernet:        ${RED}Disconnected${NC}"
+fi
+echo ""
+
+# Storage Information
+echo -e "${GREEN}💾 STORAGE INFORMATION${NC}"
+echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
+df -h / | awk 'NR==2 {printf "  Used: %s / %s (%s)\n", $3, $2, $5}'
+echo ""
+
+# Memory Information
+echo -e "${GREEN}🧠 MEMORY INFORMATION${NC}"
+echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
+free -h | awk 'NR==2 {printf "  Used: %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100}'
+echo ""
+
+# Quick Tips
+echo -e "${GREEN}💡 QUICK TIPS${NC}"
+echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
+echo -e "  • Type ${YELLOW}wifi status${NC} to check connection"
+echo -e "  • Type ${YELLOW}wifi ap${NC} to turn on hotspot"
+echo -e "  • Type ${YELLOW}wifi on${NC} to connect to Wi-Fi"
+echo -e "  • Type ${YELLOW}help${NC} for all commands"
+echo ""
+
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║                    STATUS CHECK COMPLETE                   ║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
 EOF
         chmod +x ~/whatinthePI/status.sh
     fi
@@ -150,69 +227,126 @@ EOF
     if [ ! -f ~/whatinthePI/wifi_helper.sh ]; then
         cat > ~/whatinthePI/wifi_helper.sh << 'EOF'
 #!/bin/bash
-# Wi-Fi Helper - Works in both AP and Client modes
+# Wi-Fi Helper - Works in both AP and Client modes, shows Ethernet IP
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-is_ap_mode() { systemctl is-active --quiet hostapd; }
+is_ap_mode() { systemctl is-active --quiet hostapd 2>/dev/null && [ -f /etc/hostapd/hostapd.conf ]; }
 
 case "$1" in
     on)
+        echo -e "${YELLOW}Switching to Client Mode...${NC}"
         if is_ap_mode; then
-            echo "Switching from AP to Client mode..."
-            sudo systemctl stop hostapd dnsmasq
-            sudo systemctl disable hostapd dnsmasq
-            sudo systemctl unmask wpa_supplicant
+            sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
+            sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
         fi
-        sudo rfkill unblock wifi
-        sudo ip link set wlan0 up
+        sudo systemctl unmask wpa_supplicant 2>/dev/null || true
         sudo systemctl enable wpa_supplicant
         sudo systemctl restart wpa_supplicant
-        echo "✓ Client mode enabled"
+        sudo rfkill unblock wifi
+        sudo ip link set wlan0 up
+        echo -e "${GREEN}✓ Client mode enabled${NC}"
         ;;
     off)
+        echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
+        sudo systemctl stop wpa_supplicant hostapd dnsmasq 2>/dev/null || true
         sudo rfkill block wifi
-        echo "Wi-Fi OFF"
+        sudo ip link set wlan0 down
+        echo -e "${GREEN}✓ Wi-Fi OFF${NC}"
         ;;
     ap)
-        sudo systemctl stop wpa_supplicant
+        echo -e "${YELLOW}Switching to AP Mode...${NC}"
+        if ! [ -f /etc/hostapd/hostapd.conf ]; then
+            echo -e "${RED}AP not configured yet. Run 'apsetup' first.${NC}"
+            exit 1
+        fi
+        sudo systemctl stop wpa_supplicant 2>/dev/null || true
         sudo systemctl mask wpa_supplicant
         sudo systemctl unmask hostapd
-        sudo systemctl enable hostapd
-        sudo systemctl start hostapd
-        sudo systemctl start dnsmasq
-        echo "✓ AP mode enabled"
+        sudo systemctl enable hostapd dnsmasq
+        sudo systemctl start hostapd dnsmasq
+        echo -e "${GREEN}✓ AP mode enabled${NC}"
         ;;
     status)
         if is_ap_mode; then
-            echo "Mode: ACCESS POINT"
-            ip addr show wlan0 | grep "inet "
+            echo -e "${YELLOW}Mode: ACCESS POINT${NC}"
+            AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+            SSID=$(sudo grep "^ssid" /etc/hostapd/hostapd.conf 2>/dev/null | cut -d= -f2)
+            echo -e "  AP SSID: ${GREEN}${SSID:-unknown}${NC}"
+            echo -e "  AP IP:   ${GREEN}${AP_IP:-unknown}${NC}"
         elif iwgetid -r > /dev/null 2>&1; then
-            echo "Connected to: $(iwgetid -r)"
-            echo "IP: $(hostname -I | awk '{print $1}')"
+            echo -e "${GREEN}Mode: CLIENT (connected)${NC}"
+            echo -e "  Connected to: ${GREEN}$(iwgetid -r)${NC}"
+            echo -e "  Wi-Fi IP:     ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
+        elif systemctl is-active --quiet wpa_supplicant; then
+            echo -e "${YELLOW}Mode: CLIENT (not connected)${NC}"
         else
-            echo "Not connected"
+            echo -e "${RED}Wi-Fi is OFF${NC}"
+        fi
+        # Show Ethernet IP regardless of Wi-Fi mode
+        if ip link show eth0 | grep -q "state UP"; then
+            ETH_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+            echo -e "  Ethernet IP:  ${GREEN}$ETH_IP${NC}"
+        else
+            echo -e "  Ethernet:     ${RED}Not connected${NC}"
         fi
         ;;
     scan)
         if is_ap_mode; then
-            echo "Cannot scan in AP mode. Run 'wifi off' first."
-        else
-            sudo iwlist wlan0 scan | grep -E "ESSID|Quality"
+            echo -e "${RED}Cannot scan in AP mode. Run 'wifi off' first.${NC}"
+            exit 1
         fi
+        echo -e "${YELLOW}Scanning for networks...${NC}"
+        sudo iwlist wlan0 scan 2>/dev/null | grep -E "ESSID|Quality|Encryption" | sed 's/^[ \t]*//'
         ;;
     connect)
         if is_ap_mode; then
-            echo "Cannot connect in AP mode. Run 'wifi off' first."
+            echo -e "${RED}Cannot connect in AP mode. Run 'wifi off' first.${NC}"
+            exit 1
+        fi
+        echo -e "${YELLOW}Available networks:${NC}"
+        sudo iwlist wlan0 scan 2>/dev/null | grep "ESSID" | sort -u | sed 's/^[ \t]*ESSID://g' | tr -d '"'
+        echo ""
+        read -p "Enter SSID: " ssid
+        if [ -z "$ssid" ]; then
+            echo -e "${RED}No SSID entered.${NC}"
+            exit 1
+        fi
+        read -s -p "Enter password (press Enter for open network): " pass
+        echo ""
+        # Delete any existing connection profile for this SSID to avoid conflicts
+        sudo nmcli connection delete "$ssid" 2>/dev/null
+        if [ -z "$pass" ]; then
+            sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid"
+            sudo nmcli connection up "$ssid"
         else
-            read -p "SSID: " ssid
-            read -s -p "Password: " pass
-            echo
-            sudo nmcli device wifi connect "$ssid" password "$pass"
+            sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+            sudo nmcli connection up "$ssid"
+        fi
+        sleep 3
+        if iwgetid -r 2>/dev/null | grep -q "$ssid"; then
+            echo -e "${GREEN}✓ Connected to $ssid${NC}"
+        else
+            echo -e "${RED}✗ Failed to connect. Check SSID/password.${NC}"
         fi
         ;;
+    help|--help|-h|"")
+        echo -e "${BLUE}Wi-Fi Helper Commands:${NC}"
+        echo "  wifi on      - Switch to Client mode"
+        echo "  wifi off     - Turn Wi-Fi OFF completely"
+        echo "  wifi ap      - Switch to AP mode (hotspot)"
+        echo "  wifi status  - Show current mode, Wi-Fi IP, and Ethernet IP"
+        echo "  wifi scan    - Scan for networks (client mode only)"
+        echo "  wifi connect - Connect to a network (client mode only)"
+        ;;
     *)
-        echo "Usage: wifi [on|off|ap|status|scan|connect]"
+        echo -e "${RED}Unknown command: $1${NC}"
+        echo "Run 'wifi help' for available commands"
+        exit 1
         ;;
 esac
 EOF
@@ -227,7 +361,19 @@ setup_welcome() {
     if [ ! -f ~/whatinthePI/welcome.sh ]; then
         cat > ~/whatinthePI/welcome.sh << 'EOF'
 #!/bin/bash
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; WHITE='\033[1;37m'; RED='\033[0;31m'; NC='\033[0m'
+# Welcome message with Ethernet and AP detection
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+is_ap_mode() { 
+    systemctl is-active --quiet hostapd 2>/dev/null && [ -f /etc/hostapd/hostapd.conf ]
+}
+
 clear
 echo -e "${RED}"
 echo '   ██████╗  █████╗ ███████╗██████╗ ██╗'
@@ -240,39 +386,66 @@ echo -e "${NC}"
 echo -e "${WHITE}   Raspberry Pi - Welcome ${USER}!${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
+
+# System info
 echo -e "${GREEN}📊 System Information:${NC}"
 echo -e "  Hostname:    ${YELLOW}$(hostname)${NC}"
 echo -e "  Uptime:      ${YELLOW}$(uptime -p | sed 's/up //')${NC}"
 echo -e "  Kernel:      ${YELLOW}$(uname -r)${NC}"
 echo ""
+
+# Temperature
 if command -v vcgencmd &> /dev/null; then
-    echo -e "${GREEN}🌡️  Temperature:${NC} ${YELLOW}$(vcgencmd measure_temp | cut -d= -f2)${NC}"
+    TEMP=$(vcgencmd measure_temp | cut -d= -f2)
+    echo -e "${GREEN}🌡️  Temperature:${NC} ${YELLOW}$TEMP${NC}"
     echo ""
 fi
-echo -e "${GREEN}🌐 Network:${NC}"
-if systemctl is-active --quiet hostapd; then
+
+# Network info
+echo -e "${GREEN}🌐 Network Information:${NC}"
+if is_ap_mode; then
+    AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    SSID=$(sudo grep "^ssid" /etc/hostapd/hostapd.conf 2>/dev/null | cut -d= -f2)
     echo -e "  Mode:        ${YELLOW}ACCESS POINT${NC}"
-    echo -e "  IP:          ${YELLOW}$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)${NC}"
+    echo -e "  SSID:        ${GREEN}$SSID${NC}"
+    echo -e "  AP IP:       ${GREEN}$AP_IP${NC}"
 elif iwgetid -r > /dev/null 2>&1; then
-    echo -e "  Wi-Fi SSID:  ${YELLOW}$(iwgetid -r)${NC}"
-    echo -e "  IP Address:  ${YELLOW}$(hostname -I | awk '{print $1}')${NC}"
+    echo -e "  Mode:        ${GREEN}CLIENT${NC}"
+    echo -e "  Wi-Fi SSID:  ${GREEN}$(iwgetid -r)${NC}"
+    echo -e "  IP Address:  ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
 else
     echo -e "  Wi-Fi:       ${YELLOW}Not connected${NC}"
 fi
+
+# Ethernet
+if ip link show eth0 | grep -q "state UP"; then
+    ETH_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    echo -e "  Ethernet IP: ${GREEN}$ETH_IP${NC}"
+else
+    echo -e "  Ethernet:    ${RED}Not connected${NC}"
+fi
 echo ""
+
+# Storage
 echo -e "${GREEN}💾 Storage:${NC}"
 df -h / | awk 'NR==2 {printf "  Used: %s / %s (%s)\n", $3, $2, $5}'
 echo ""
+
+# Memory
 echo -e "${GREEN}🧠 Memory:${NC}"
 free -h | awk 'NR==2 {printf "  Used: %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100}'
 echo ""
-echo -e "${GREEN}💡 Commands:${NC}"
+
+# Available commands
+echo -e "${GREEN}💡 Available Commands:${NC}"
 echo -e "  ${YELLOW}help${NC}        - Show all commands"
 echo -e "  ${YELLOW}status${NC}      - System status"
-echo -e "  ${YELLOW}wifi ap${NC}     - Turn on AP mode"
-echo -e "  ${YELLOW}wifi on${NC}     - Turn on client mode"
-echo -e "  ${YELLOW}wifiman${NC}     - Wi-Fi manager"
+echo -e "  ${YELLOW}welcome${NC}     - Show this message"
+echo -e "  ${YELLOW}wifi ap${NC}     - Turn on hotspot (AP mode)"
+echo -e "  ${YELLOW}wifi on${NC}     - Connect to Wi-Fi (client mode)"
+echo -e "  ${YELLOW}wifi status${NC} - Check connection"
 echo ""
+
 echo -e "${CYAN}========================================${NC}"
 echo -e "${YELLOW}SSH: ssh ${USER}@$(hostname).local${NC}"
 echo -e "${CYAN}========================================${NC}"
