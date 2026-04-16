@@ -1,6 +1,6 @@
 #!/bin/bash
-# Raspberry Pi 4B - WORKING Access Point Setup
-# This version makes Wi-Fi visible
+# Raspberry Pi 4B - Access Point Setup (NetworkManager compatible)
+# This version works on modern Raspberry Pi OS
 
 set -e
 
@@ -15,14 +15,14 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Raspberry Pi 4B - Access Point Setup${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# Default values - USE THESE EXACT VALUES FOR VISIBLE NETWORK
+# Default values
 DEFAULT_HOSTNAME="ceejay"
 DEFAULT_USERNAME="ceej"
-DEFAULT_IP="192.168.50.1"  # Use 192.168.50.1, not 10.1.1.1
+DEFAULT_IP="192.168.50.1"
 DEFAULT_SSID="RPi_Network"
 DEFAULT_PASSWORD="raspberry123"
 
-echo -e "${YELLOW}IMPORTANT: Use 192.168.50.x for best compatibility${NC}"
+echo -e "${YELLOW}Using IP: $DEFAULT_IP${NC}"
 echo ""
 
 # Get user input
@@ -32,16 +32,15 @@ HOSTNAME=${HOSTNAME:-$DEFAULT_HOSTNAME}
 read -p "Enter username for SSH login [$DEFAULT_USERNAME]: " USERNAME
 USERNAME=${USERNAME:-$DEFAULT_USERNAME}
 
-read -p "Enter AP IP address [192.168.50.1]: " STATIC_IP
-STATIC_IP=${STATIC_IP:-"192.168.50.1"}
+read -p "Enter AP IP address [$DEFAULT_IP]: " STATIC_IP
+STATIC_IP=${STATIC_IP:-$DEFAULT_IP}
 
-read -p "Enter Wi-Fi SSID (network name) [RPi_Network]: " SSID
-SSID=${SSID:-"RPi_Network"}
+read -p "Enter Wi-Fi SSID (network name) [$DEFAULT_SSID]: " SSID
+SSID=${SSID:-$DEFAULT_SSID}
 
-echo -e "${YELLOW}Enter Wi-Fi password (min 8 chars)${NC}"
-read -s -p "Password [raspberry123]: " PASSWORD
+read -s -p "Enter Wi-Fi password (min 8 chars) [$DEFAULT_PASSWORD]: " PASSWORD
 echo ""
-PASSWORD=${PASSWORD:-"raspberry123"}
+PASSWORD=${PASSWORD:-$DEFAULT_PASSWORD}
 
 # Confirm
 echo -e "\n${YELLOW}Confirm settings:${NC}"
@@ -69,36 +68,32 @@ if ! id "$USERNAME" &>/dev/null; then
 fi
 
 # ============================================
-# Configure AP - WORKING CONFIGURATION
+# Configure AP
 # ============================================
-echo -e "\n${GREEN}[1/6] Installing packages...${NC}"
+echo -e "\n${GREEN}[1/5] Installing packages...${NC}"
 sudo apt update
 sudo apt install -y hostapd dnsmasq
 
-echo -e "\n${GREEN}[2/6] Stopping services...${NC}"
-sudo systemctl stop hostapd
-sudo systemctl stop dnsmasq
-sudo systemctl stop wpa_supplicant
+echo -e "\n${GREEN}[2/5] Stopping services...${NC}"
+sudo systemctl stop hostapd 2>/dev/null || true
+sudo systemctl stop dnsmasq 2>/dev/null || true
+sudo systemctl stop wpa_supplicant 2>/dev/null || true
 sudo pkill hostapd 2>/dev/null || true
 
-echo -e "\n${GREEN}[3/6] Configuring static IP...${NC}"
+echo -e "\n${GREEN}[3/5] Configuring network...${NC}"
 
-# Configure dhcpcd
-sudo tee -a /etc/dhcpcd.conf << EOF
+# Disable NetworkManager for wlan0
+sudo nmcli device set wlan0 managed no 2>/dev/null || true
 
-# AP Setup
-interface wlan0
-    static ip_address=$STATIC_IP/24
-    nohook wpa_supplicant
-EOF
+# Set static IP
+sudo ip link set wlan0 down
+sudo ip addr flush dev wlan0
+sudo ip addr add ${STATIC_IP}/24 dev wlan0
+sudo ip link set wlan0 up
 
-# Restart dhcpcd
-sudo systemctl restart dhcpcd 2>/dev/null || sudo systemctl restart networking
-sleep 3
+echo -e "\n${GREEN}[4/5] Configuring hostapd...${NC}"
 
-echo -e "\n${GREEN}[4/6] Configuring hostapd...${NC}"
-
-# WORKING hostapd config
+# Create hostapd config
 sudo tee /etc/hostapd/hostapd.conf > /dev/null << EOF
 interface=wlan0
 driver=nl80211
@@ -116,14 +111,11 @@ wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 EOF
 
-# Configure hostapd defaults
+# Configure hostapd
 sudo sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
 
-echo -e "\n${GREEN}[5/6] Configuring dnsmasq...${NC}"
-
-# Calculate network prefix
+# Create dnsmasq config
 NETWORK_PREFIX=$(echo $STATIC_IP | cut -d. -f1-3)
-
 sudo tee /etc/dnsmasq.conf > /dev/null << EOF
 interface=wlan0
 dhcp-range=${NETWORK_PREFIX}.10,${NETWORK_PREFIX}.100,255.255.255.0,24h
@@ -132,13 +124,7 @@ dhcp-option=6,$STATIC_IP
 server=8.8.8.8
 EOF
 
-echo -e "\n${GREEN}[6/6] Starting services...${NC}"
-
-# Set IP on wlan0
-sudo ip link set wlan0 down
-sudo ip addr flush dev wlan0
-sudo ip addr add ${STATIC_IP}/24 dev wlan0
-sudo ip link set wlan0 up
+echo -e "\n${GREEN}[5/5] Starting services...${NC}"
 
 # Start services
 sudo systemctl unmask hostapd
@@ -163,14 +149,14 @@ echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
 # ============================================
 # Verify
 # ============================================
-echo -e "\n${GREEN}Verifying services...${NC}"
-
+echo -e "\n${GREEN}Verifying...${NC}"
 sleep 2
 
 if systemctl is-active --quiet hostapd; then
     echo -e "${GREEN}✓ hostapd is running${NC}"
 else
     echo -e "${RED}✗ hostapd failed to start${NC}"
+    sudo journalctl -u hostapd --no-pager -n 10
 fi
 
 if systemctl is-active --quiet dnsmasq; then
@@ -202,6 +188,4 @@ echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}Rebooting...${NC}"
     sudo reboot
-else
-    echo -e "${YELLOW}After reboot, look for Wi-Fi: $SSID${NC}"
 fi
