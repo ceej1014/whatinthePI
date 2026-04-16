@@ -3,10 +3,8 @@
 # Usage: curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/auto_setup.sh | bash
 
 # Make itself executable if it's not already
-if [[ ! -x "$0" ]]; then
-    chmod +x "$0"
-    echo -e "\033[0;32m✓ Made auto_setup.sh executable\033[0m"
-    exec "$0" "$@"
+if [[ ! -x "$0" ]] && [[ -f "$0" ]]; then
+    chmod +x "$0" 2>/dev/null || true
 fi
 
 set -e
@@ -19,14 +17,11 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Check if running interactively
-if [ ! -t 0 ]; then
-    # Running in non-interactive mode (piped input)
-    # Read the first line as the choice
-    read -r choice
-    echo -e "${YELLOW}Non-interactive mode detected. Using choice: $choice${NC}"
+# Detect if running interactively (has a terminal)
+if [ -t 0 ] && [ -t 1 ]; then
+    INTERACTIVE=true
 else
-    choice=""
+    INTERACTIVE=false
 fi
 
 clear
@@ -233,29 +228,41 @@ EOF
     echo -e "${GREEN}Welcome message installed!${NC}"
 }
 
-# Ask what to install (only if not already set via pipe)
-if [ -z "$choice" ]; then
+# Determine what to do based on interactive mode
+if [ "$INTERACTIVE" = true ]; then
+    # Interactive mode - show menu
     echo ""
     echo -e "${BLUE}What would you like to do?${NC}"
     echo "1) Setup Access Point (AP Mode) - Create your own Wi-Fi network"
     echo "2) Install Wi-Fi Manager only - Manage existing Wi-Fi connections"
     echo "3) Install all tools + create aliases (no AP setup)"
-    echo "4) Full setup - Install everything + run AP setup"
+    echo "4) Full setup - Install everything + run AP setup ${GREEN}(RECOMMENDED)${NC}"
     echo "5) Check for updates"
     echo "6) Change hostname"
     echo "7) Change AP IP address"
     echo "8) Uninstall whatinthePI"
     echo "9) Exit"
     echo ""
+    read -p "Choose [1-9] (press Enter for option 4): " choice
     
-    # Clear input buffer before reading
-    read -t 0.1 -n 10000 2>/dev/null || true
-    read -p "Choose [1-9]: " choice
+    # Default to 4 if no input
+    if [ -z "$choice" ]; then
+        choice=4
+        echo -e "${YELLOW}No input detected. Using default: Option 4 (Full setup)${NC}"
+        sleep 2
+    fi
+else
+    # Non-interactive mode (curl | bash) - automatically run full setup
+    echo -e "${YELLOW}Non-interactive mode detected. Running Full Setup automatically...${NC}"
+    echo -e "${YELLOW}To see interactive menu, run: ./auto_setup.sh after installation${NC}"
+    echo ""
+    sleep 3
+    choice=4
 fi
 
 # Validate choice
 if [[ ! "$choice" =~ ^[1-9]$ ]]; then
-    echo -e "${RED}Invalid option: '$choice'. Please enter a number between 1 and 9.${NC}"
+    echo -e "${RED}Invalid option: '$choice'. Exiting.${NC}"
     exit 1
 fi
 
@@ -341,4 +348,3 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${YELLOW}Type 'help' to see all available commands${NC}"
 echo -e "${YELLOW}Type 'uninstall' to remove everything${NC}"
-echo ""
