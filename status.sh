@@ -1,14 +1,17 @@
 #!/bin/bash
-# System Status Script for Raspberry Pi
-# Shows comprehensive system information
+# System Status - Fixed AP detection
 
-# Colors for output
 GREEN='\033[0;32m'
-RED='\033[0;31m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
+
+# Fixed AP detection
+is_ap_mode() { 
+    systemctl is-active --quiet hostapd 2>/dev/null && [ -f /etc/hostapd/hostapd.conf ]
+}
 
 clear
 echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
@@ -21,7 +24,6 @@ echo -e "${GREEN}📊 SYSTEM INFORMATION${NC}"
 echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
 echo -e "  Hostname:        ${YELLOW}$(hostname)${NC}"
 echo -e "  Kernel:          $(uname -r)"
-echo -e "  OS Version:      $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
 echo -e "  Uptime:          $(uptime -p | sed 's/up //')"
 echo -e "  Load Average:    $(uptime | awk -F'load average:' '{print $2}')"
 echo -e "  Users Online:    $(who | wc -l)"
@@ -34,7 +36,6 @@ if command -v vcgencmd &> /dev/null; then
     echo -e "  Temperature:     ${YELLOW}$(vcgencmd measure_temp | cut -d= -f2)${NC}"
     echo -e "  Clock Speed:     $(vcgencmd measure_clock arm | cut -d= -f2 | awk '{printf "%.2f MHz\n", $1/1000000}')"
     echo -e "  Voltage:         $(vcgencmd measure_volts core | cut -d= -f2)"
-    echo -e "  Throttled:       $(vcgencmd get_throttled | cut -d= -f2)"
     echo ""
 fi
 
@@ -42,18 +43,21 @@ fi
 echo -e "${GREEN}🌐 NETWORK INFORMATION${NC}"
 echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
 
-# Wi-Fi Status
-if iwgetid -r > /dev/null 2>&1; then
-    echo -e "  Wi-Fi Status:    ${GREEN}Connected${NC}"
-    echo -e "  SSID:            $(iwgetid -r)"
+if is_ap_mode; then
+    echo -e "  Mode:            ${YELLOW}ACCESS POINT${NC}"
+    AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    SSID=$(sudo grep "^ssid" /etc/hostapd/hostapd.conf 2>/dev/null | cut -d= -f2)
+    echo -e "  AP IP:           ${GREEN}$AP_IP${NC}"
+    echo -e "  SSID:            ${GREEN}$SSID${NC}"
+elif iwgetid -r > /dev/null 2>&1; then
+    echo -e "  Mode:            ${GREEN}CLIENT (connected)${NC}"
+    echo -e "  Wi-Fi SSID:      ${GREEN}$(iwgetid -r)${NC}"
+    echo -e "  IP Address:      ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
     echo -e "  Signal:          $(iwconfig wlan0 2>/dev/null | grep -i quality | awk '{print $2}' | cut -d= -f2)"
-    echo -e "  IP Address:      $(hostname -I | awk '{print $1}')"
+elif systemctl is-active --quiet wpa_supplicant; then
+    echo -e "  Mode:            ${YELLOW}CLIENT (not connected)${NC}"
 else
-    echo -e "  Wi-Fi Status:    ${RED}Disconnected / AP Mode${NC}"
-    if systemctl is-active --quiet hostapd; then
-        echo -e "  Mode:            ${YELLOW}Access Point (AP Mode)${NC}"
-        echo -e "  AP IP:           1.2.1.1 (default)"
-    fi
+    echo -e "  Mode:            ${RED}Wi-Fi DISABLED${NC}"
 fi
 
 # Ethernet Status
@@ -63,56 +67,27 @@ if ip link show eth0 | grep -q "state UP"; then
 else
     echo -e "  Ethernet:        ${RED}Disconnected${NC}"
 fi
-
-# Interface details
-echo -e "  MAC Address:     $(cat /sys/class/net/wlan0/address 2>/dev/null || echo 'N/A')"
 echo ""
 
 # Storage Information
 echo -e "${GREEN}💾 STORAGE INFORMATION${NC}"
 echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
-df -h / /boot | awk 'NR==1 {printf "  %-10s %-8s %-8s %-8s %-5s\n", "Device", "Size", "Used", "Avail", "Use%"} NR>1 {printf "  %-10s %-8s %-8s %-8s %-5s\n", $1, $2, $3, $4, $5}'
-
-# SD Card info
-if command -v mmc &> /dev/null; then
-    echo ""
-    echo -e "  SD Card Info:"
-    echo -e "    $(cat /sys/block/mmcblk0/device/cid 2>/dev/null | cut -c1-20 || echo 'N/A')"
-fi
+df -h / | awk 'NR==2 {printf "  Used: %s / %s (%s)\n", $3, $2, $5}'
 echo ""
 
 # Memory Information
 echo -e "${GREEN}🧠 MEMORY INFORMATION${NC}"
 echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
-free -h | awk 'NR==1 {printf "  %-12s %-10s %-10s %-10s\n", "Type", "Total", "Used", "Available"} NR==2 {printf "  %-12s %-10s %-10s %-10s\n", "Memory:", $2, $3, $7} NR==3 {printf "  %-12s %-10s %-10s\n", "Swap:", $2, $3}'
-echo ""
-
-# Running Services
-echo -e "${GREEN}⚙️  IMPORTANT SERVICES${NC}"
-echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
-services=("hostapd" "dnsmasq" "wpa_supplicant" "ssh" "dhcpcd")
-for service in "${services[@]}"; do
-    if systemctl is-active --quiet "$service"; then
-        echo -e "  $service:        ${GREEN}● Active${NC}"
-    else
-        echo -e "  $service:        ${RED}○ Inactive${NC}"
-    fi
-done
-echo ""
-
-# Recent Log Messages
-echo -e "${GREEN}📝 RECENT SYSTEM LOGS (last 5 errors)${NC}"
-echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
-sudo journalctl -p 3 -n 5 --no-pager | sed 's/^/  /' || echo "  No recent errors"
+free -h | awk 'NR==2 {printf "  Used: %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100}'
 echo ""
 
 # Quick Tips
 echo -e "${GREEN}💡 QUICK TIPS${NC}"
 echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
-echo -e "  • Type ${YELLOW}help${NC} to see all available commands"
-echo -e "  • Type ${YELLOW}wifiman${NC} to open Wi-Fi Manager"
-echo -e "  • Type ${YELLOW}apsetup${NC} to configure Access Point"
-echo -e "  • Type ${YELLOW}sudo reboot${NC} to restart your Pi"
+echo -e "  • Type ${YELLOW}wifi status${NC} to check connection"
+echo -e "  • Type ${YELLOW}wifi ap${NC} to turn on hotspot"
+echo -e "  • Type ${YELLOW}wifi on${NC} to connect to Wi-Fi"
+echo -e "  • Type ${YELLOW}help${NC} for all commands"
 echo ""
 
 echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
