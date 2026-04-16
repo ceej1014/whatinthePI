@@ -101,9 +101,16 @@ case "$1" in
             sudo nmcli connection modify "$ssid" wifi-sec.key-mgmt none
             sudo nmcli connection up "$ssid"
         else
-            # Secured network: WPA2-PSK
+            # Secured network: WPA2-PSK - use two-step method to avoid password parsing issues
             echo -e "${YELLOW}Connecting to secured network: $ssid${NC}"
-            sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+            # Create connection without password first
+            sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid"
+            # Set security and password
+            sudo nmcli connection modify "$ssid" wifi-sec.key-mgmt wpa-psk
+            sudo nmcli connection modify "$ssid" wifi-sec.psk "$pass"
+            # Set autoconnect
+            sudo nmcli connection modify "$ssid" connection.autoconnect yes
+            # Bring it up
             sudo nmcli connection up "$ssid"
         fi
 
