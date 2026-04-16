@@ -398,7 +398,7 @@ if [ -z "$1" ]; then
                 if [ -n "$prof_name" ]; then
                     read -p "SSID: " ssid
                     if [ -n "$ssid" ]; then
-                        read -s -p "Password (min 8 chars, blank for open): " pass
+                        read -s -p "Password (min 8 chars, blank wont work): " pass
                         echo ""
                         if [ -z "$pass" ]; then
                             pass=""
