@@ -9,11 +9,29 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# ------------------------------------------------------------
-# Helper functions
-# ------------------------------------------------------------
-HOTSPOT_NAME="RPi_Network"   # default SSID, can be changed via ap-setup
+# Configuration file for hotspot SSID
+CONFIG_DIR="/etc/whatinthepi"
+HOTSPOT_CONF="$CONFIG_DIR/hotspot.conf"
 
+# Ensure config directory exists
+sudo mkdir -p "$CONFIG_DIR"
+sudo chmod 755 "$CONFIG_DIR"
+
+# Function to read saved hotspot SSID
+get_hotspot_name() {
+    if [ -f "$HOTSPOT_CONF" ]; then
+        cat "$HOTSPOT_CONF"
+    else
+        echo ""
+    fi
+}
+
+# Function to save hotspot SSID
+save_hotspot_name() {
+    echo "$1" | sudo tee "$HOTSPOT_CONF" > /dev/null
+}
+
+# Helper functions
 is_ap_mode() {
     nmcli -t -f NAME,DEVICE,TYPE con show --active 2>/dev/null | grep -q ":wlan0:802-11-wireless" && \
     nmcli -t -f 802-11-wireless.mode con show --active 2>/dev/null | grep -q "ap"
@@ -58,8 +76,10 @@ show_status() {
 case "$1" in
     on)
         echo -e "${YELLOW}Switching to Client Mode...${NC}"
+        # Turn off AP if active
         if is_ap_mode; then
-            sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+            HOTSPOT=$(get_hotspot_name)
+            [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
         fi
         sudo nmcli radio wifi on
         sudo systemctl unmask wpa_supplicant 2>/dev/null || true
@@ -71,7 +91,8 @@ case "$1" in
     off)
         echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
         if is_ap_mode; then
-            sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+            HOTSPOT=$(get_hotspot_name)
+            [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
         fi
         sudo nmcli radio wifi off
         sudo ip link set wlan0 down
@@ -79,21 +100,24 @@ case "$1" in
         ;;
     ap)
         echo -e "${YELLOW}Switching to AP Mode...${NC}"
-        if ! nmcli con show "$HOTSPOT_NAME" &>/dev/null; then
+        HOTSPOT=$(get_hotspot_name)
+        if [ -z "$HOTSPOT" ] || ! nmcli con show "$HOTSPOT" &>/dev/null; then
             echo -e "${RED}Hotspot not configured. Run 'wifi ap-setup' first.${NC}"
             exit 1
         fi
         # Turn off client Wi-Fi
         sudo nmcli radio wifi off
         sudo ip link set wlan0 down
+        # Ensure the connection profile is bound to wlan0
+        sudo nmcli connection modify "$HOTSPOT" connection.interface-name wlan0
         # Start hotspot
-        sudo nmcli connection up "$HOTSPOT_NAME"
+        sudo nmcli connection up "$HOTSPOT"
         echo -e "${GREEN}✓ AP mode enabled${NC}"
         ;;
     ap-setup)
         echo -e "${YELLOW}Configuring Access Point hotspot...${NC}"
-        read -p "Enter SSID for hotspot [${HOTSPOT_NAME}]: " ssid
-        ssid=${ssid:-$HOTSPOT_NAME}
+        read -p "Enter SSID for hotspot [RPi_Network]: " ssid
+        ssid=${ssid:-RPi_Network}
         read -s -p "Enter password (min 8 chars) [raspberry123]: " pass
         echo ""
         pass=${pass:-raspberry123}
@@ -101,18 +125,20 @@ case "$1" in
             echo -e "${RED}Password must be at least 8 characters. Using default.${NC}"
             pass="raspberry123"
         fi
-        # Delete existing profile
-        sudo nmcli connection delete "$HOTSPOT_NAME" 2>/dev/null
+        # Delete any existing profile with the same name
         sudo nmcli connection delete "$ssid" 2>/dev/null
-        # Create hotspot
+        # Create hotspot with explicit interface binding
         sudo nmcli connection add type wifi ifname wlan0 con-name "$ssid" autoconnect yes ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+        sudo nmcli connection modify "$ssid" connection.interface-name wlan0
         sudo nmcli connection modify "$ssid" connection.autoconnect-priority 100
-        HOTSPOT_NAME="$ssid"
+        # Save the SSID for future use
+        save_hotspot_name "$ssid"
         echo -e "${GREEN}✓ Hotspot configured. Start it with 'wifi ap'${NC}"
         ;;
     ap-off)
         echo -e "${YELLOW}Turning OFF AP Mode...${NC}"
-        sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+        HOTSPOT=$(get_hotspot_name)
+        [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
         sudo nmcli radio wifi on
         sudo systemctl restart wpa_supplicant
         echo -e "${GREEN}✓ AP mode disabled, client mode restored${NC}"
@@ -222,8 +248,9 @@ if [ -z "$1" ]; then
         case $choice in
             1)
                 echo -e "${YELLOW}Switching to Client Mode...${NC}"
+                HOTSPOT=$(get_hotspot_name)
                 if is_ap_mode; then
-                    sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+                    [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
                 fi
                 sudo nmcli radio wifi on
                 sudo systemctl unmask wpa_supplicant 2>/dev/null || true
@@ -235,20 +262,22 @@ if [ -z "$1" ]; then
                 ;;
             2)
                 echo -e "${YELLOW}Switching to AP Mode...${NC}"
-                if ! nmcli con show "$HOTSPOT_NAME" &>/dev/null; then
+                HOTSPOT=$(get_hotspot_name)
+                if [ -z "$HOTSPOT" ] || ! nmcli con show "$HOTSPOT" &>/dev/null; then
                     echo -e "${RED}Hotspot not configured. Please run option 3 first.${NC}"
                 else
                     sudo nmcli radio wifi off
                     sudo ip link set wlan0 down
-                    sudo nmcli connection up "$HOTSPOT_NAME"
+                    sudo nmcli connection modify "$HOTSPOT" connection.interface-name wlan0
+                    sudo nmcli connection up "$HOTSPOT"
                     echo -e "${GREEN}✓ AP mode enabled${NC}"
                 fi
                 read -p "Press Enter..."
                 ;;
             3)
                 echo -e "${YELLOW}Configuring Hotspot...${NC}"
-                read -p "Enter SSID for hotspot [${HOTSPOT_NAME}]: " ssid
-                ssid=${ssid:-$HOTSPOT_NAME}
+                read -p "Enter SSID for hotspot [RPi_Network]: " ssid
+                ssid=${ssid:-RPi_Network}
                 read -s -p "Enter password (min 8 chars) [raspberry123]: " pass
                 echo ""
                 pass=${pass:-raspberry123}
@@ -256,17 +285,18 @@ if [ -z "$1" ]; then
                     echo -e "${RED}Password must be at least 8 characters. Using default.${NC}"
                     pass="raspberry123"
                 fi
-                sudo nmcli connection delete "$HOTSPOT_NAME" 2>/dev/null
                 sudo nmcli connection delete "$ssid" 2>/dev/null
                 sudo nmcli connection add type wifi ifname wlan0 con-name "$ssid" autoconnect yes ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+                sudo nmcli connection modify "$ssid" connection.interface-name wlan0
                 sudo nmcli connection modify "$ssid" connection.autoconnect-priority 100
-                HOTSPOT_NAME="$ssid"
+                save_hotspot_name "$ssid"
                 echo -e "${GREEN}✓ Hotspot configured. Start it with option 2.${NC}"
                 read -p "Press Enter..."
                 ;;
             4)
                 echo -e "${YELLOW}Turning OFF AP Mode...${NC}"
-                sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+                HOTSPOT=$(get_hotspot_name)
+                [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
                 sudo nmcli radio wifi on
                 sudo systemctl restart wpa_supplicant
                 echo -e "${GREEN}✓ AP mode disabled, client mode restored${NC}"
@@ -294,7 +324,6 @@ if [ -z "$1" ]; then
                     else
                         read -s -p "Enter password (press Enter for open network): " pass
                         echo ""
-                        # Delete any existing connection
                         sudo nmcli connection delete "$ssid" 2>/dev/null
                         if [ -z "$pass" ]; then
                             sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid"
@@ -320,8 +349,9 @@ if [ -z "$1" ]; then
                 ;;
             7)
                 echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
+                HOTSPOT=$(get_hotspot_name)
                 if is_ap_mode; then
-                    sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+                    [ -n "$HOTSPOT" ] && sudo nmcli connection down "$HOTSPOT" 2>/dev/null
                 fi
                 sudo nmcli radio wifi off
                 sudo ip link set wlan0 down
