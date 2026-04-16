@@ -374,7 +374,7 @@ if [ -z "$1" ]; then
         echo ""
         echo -e "${BLUE}Options:${NC}"
         echo "1)  Switch to Client Mode (connect to Wi-Fi)"
-        echo "2)  Switch to AP Mode (start hotspot)"
+        echo "2)  Switch to AP Mode (start hotspot, please repeat this option until the AP is on)"
         echo "3)  Configure Hotspot (ap-setup)"
         echo "4)  List saved profiles"
         echo "5)  Select/Use a profile"
