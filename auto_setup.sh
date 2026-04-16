@@ -29,7 +29,7 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   Raspberry Pi Tools Installer${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# Clone the repository
+# Clone the repository if not already present
 if [ ! -d "whatinthePI" ]; then
     echo -e "${YELLOW}Cloning repository...${NC}"
     git clone https://github.com/ceej1014/whatinthePI.git
@@ -48,6 +48,9 @@ for script in *.sh; do
 done
 chmod +x raspi-ap-setup/*.sh 2>/dev/null || true
 chmod +x wifi_manager/*.sh 2>/dev/null || true
+
+echo -e "${GREEN}✓ All scripts are executable${NC}"
+sleep 1
 
 # Function to create aliases
 create_aliases() {
@@ -69,46 +72,52 @@ alias changeip='~/whatinthePI/changeip.sh'
 alias uninstall='~/whatinthePI/uninstall.sh'
 alias wifiman='sudo ~/whatinthePI/wifi_manager/wifi_manager.sh'
 alias apsetup='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
-alias apon='sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh'
-alias apoff='sudo systemctl stop hostapd dnsmasq 2>/dev/null; sudo systemctl restart wpa_supplicant'
 alias wifi='~/whatinthePI/wifi_helper.sh'
 alias myip='hostname -I | awk "{print \$1}"'
 alias netstat='sudo netstat -tulpn'
 alias reboot='sudo reboot'
 alias shutdown='sudo shutdown now'
 
-wifion() { sudo rfkill unblock wifi && sudo ip link set wlan0 up; echo "Wi-Fi ON"; }
-wifioff() { sudo rfkill block wifi; echo "Wi-Fi OFF"; }
-wifiscan() { sudo iwlist wlan0 scan | grep -E "ESSID|Quality"; }
-wificonnect() { 
-    read -p "Enter SSID: " ssid
-    read -s -p "Enter password: " pass
-    echo
-    echo "Connecting to $ssid..."
-    wpa_passphrase "$ssid" "$pass" | sudo tee -a /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null
+# Mode switching aliases
+alias client='sudo systemctl stop hostapd dnsmasq 2>/dev/null; sudo systemctl disable hostapd dnsmasq 2>/dev/null; sudo systemctl unmask wpa_supplicant; sudo systemctl enable wpa_supplicant; sudo systemctl restart wpa_supplicant; echo "✓ Client mode enabled"'
+alias ap='sudo systemctl stop wpa_supplicant; sudo systemctl mask wpa_supplicant; sudo systemctl unmask hostapd; sudo systemctl enable hostapd; sudo systemctl start hostapd; sudo systemctl start dnsmasq; echo "✓ AP mode enabled"'
+alias apon='ap'
+alias apoff='client'
+
+# Wi-Fi quick commands
+wifion() { 
+    if systemctl is-active --quiet hostapd; then
+        echo "AP mode active. Switching to client mode..."
+        client
+    fi
+    sudo rfkill unblock wifi
+    sudo ip link set wlan0 up
     sudo systemctl restart wpa_supplicant
-    sleep 3
-    wifistatus
+    echo "Wi-Fi ON"
+}
+wifioff() { sudo rfkill block wifi; echo "Wi-Fi OFF"; }
+wifiscan() { 
+    if systemctl is-active --quiet hostapd; then
+        echo "Cannot scan in AP mode. Run 'apoff' first."
+    else
+        sudo iwlist wlan0 scan | grep -E "ESSID|Quality"
+    fi
 }
 wifistatus() { 
-    if iwgetid -r > /dev/null 2>&1; then
+    if systemctl is-active --quiet hostapd; then
+        echo "Mode: ACCESS POINT"
+        echo "IP: $(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)"
+    elif iwgetid -r > /dev/null 2>&1; then
         echo "Connected to: $(iwgetid -r)"
         echo "IP: $(hostname -I | awk '{print $1}')"
     else
         echo "Not connected to any network"
     fi
 }
-wifidisconnect() { sudo dhclient -r wlan0; echo "Disconnected"; }
-wififorget() { 
-    echo "Opening wpa_supplicant.conf - delete the network entry"
-    sudo nano /etc/wpa_supplicant/wpa_supplicant.conf
-    sudo systemctl restart wpa_supplicant
-}
-wifilist() { sudo grep -E "^[[:space:]]*ssid=" /etc/wpa_supplicant/wpa_supplicant.conf | sed 's/.*ssid="\(.*\)"/\1/'; }
 EOF
 
     source ~/.bash_aliases 2>/dev/null || true
-    echo -e "${GREEN}✓ Aliases created!${NC}"
+    echo -e "${GREEN}✓ Aliases created successfully!${NC}"
 }
 
 # Function to create helper scripts
@@ -121,7 +130,11 @@ echo "System Status"
 echo "========================================="
 echo "Hostname: $(hostname)"
 echo "IP Address: $(hostname -I | awk '{print $1}')"
-echo "Wi-Fi: $(iwgetid -r 2>/dev/null || echo 'Not connected/AP Mode')"
+if systemctl is-active --quiet hostapd; then
+    echo "Mode: ACCESS POINT (broadcasting Wi-Fi)"
+else
+    echo "Wi-Fi: $(iwgetid -r 2>/dev/null || echo 'Not connected')"
+fi
 echo "Uptime: $(uptime -p)"
 if command -v vcgencmd &> /dev/null; then
     echo "Temperature: $(vcgencmd measure_temp | cut -d= -f2)"
@@ -136,29 +149,70 @@ EOF
     if [ ! -f ~/whatinthePI/wifi_helper.sh ]; then
         cat > ~/whatinthePI/wifi_helper.sh << 'EOF'
 #!/bin/bash
+# Wi-Fi Helper - Works in both AP and Client modes
+
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+
+is_ap_mode() { systemctl is-active --quiet hostapd; }
+
 case "$1" in
-    on) sudo rfkill unblock wifi && sudo ip link set wlan0 up; echo "Wi-Fi ON";;
-    off) sudo rfkill block wifi; echo "Wi-Fi OFF";;
-    scan) sudo iwlist wlan0 scan | grep -E "ESSID|Quality";;
+    on)
+        if is_ap_mode; then
+            echo "Switching from AP to Client mode..."
+            sudo systemctl stop hostapd dnsmasq
+            sudo systemctl disable hostapd dnsmasq
+            sudo systemctl unmask wpa_supplicant
+        fi
+        sudo rfkill unblock wifi
+        sudo ip link set wlan0 up
+        sudo systemctl enable wpa_supplicant
+        sudo systemctl restart wpa_supplicant
+        echo "✓ Client mode enabled"
+        ;;
+    off)
+        sudo rfkill block wifi
+        echo "Wi-Fi OFF"
+        ;;
+    ap)
+        sudo systemctl stop wpa_supplicant
+        sudo systemctl mask wpa_supplicant
+        sudo systemctl unmask hostapd
+        sudo systemctl enable hostapd
+        sudo systemctl start hostapd
+        sudo systemctl start dnsmasq
+        echo "✓ AP mode enabled"
+        ;;
     status)
-        if iwgetid -r > /dev/null 2>&1; then
+        if is_ap_mode; then
+            echo "Mode: ACCESS POINT"
+            ip addr show wlan0 | grep "inet "
+        elif iwgetid -r > /dev/null 2>&1; then
             echo "Connected to: $(iwgetid -r)"
             echo "IP: $(hostname -I | awk '{print $1}')"
         else
-            echo "Not connected to any network"
-        fi;;
-    disconnect) sudo dhclient -r wlan0; echo "Disconnected";;
-    list) sudo grep -E "^[[:space:]]*ssid=" /etc/wpa_supplicant/wpa_supplicant.conf | sed 's/.*ssid="\(.*\)"/\1/';;
+            echo "Not connected"
+        fi
+        ;;
+    scan)
+        if is_ap_mode; then
+            echo "Cannot scan in AP mode. Run 'wifi off' first."
+        else
+            sudo iwlist wlan0 scan | grep -E "ESSID|Quality"
+        fi
+        ;;
     connect)
-        read -p "Enter SSID: " ssid
-        read -s -p "Enter password: " pass
-        echo
-        echo "Connecting to $ssid..."
-        wpa_passphrase "$ssid" "$pass" | sudo tee -a /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null
-        sudo systemctl restart wpa_supplicant
-        sleep 3
-        wifistatus;;
-    *) echo "wifi on/off/scan/status/connect/disconnect/list";;
+        if is_ap_mode; then
+            echo "Cannot connect in AP mode. Run 'wifi off' first."
+        else
+            read -p "SSID: " ssid
+            read -s -p "Password: " pass
+            echo
+            sudo nmcli device wifi connect "$ssid" password "$pass"
+        fi
+        ;;
+    *)
+        echo "Usage: wifi [on|off|ap|status|scan|connect]"
+        ;;
 esac
 EOF
         chmod +x ~/whatinthePI/wifi_helper.sh
@@ -194,12 +248,15 @@ if command -v vcgencmd &> /dev/null; then
     echo -e "${GREEN}🌡️  Temperature:${NC} ${YELLOW}$(vcgencmd measure_temp | cut -d= -f2)${NC}"
     echo ""
 fi
-echo -e "${GREEN}🌐 Network Information:${NC}"
-if iwgetid -r > /dev/null 2>&1; then
+echo -e "${GREEN}🌐 Network:${NC}"
+if systemctl is-active --quiet hostapd; then
+    echo -e "  Mode:        ${YELLOW}ACCESS POINT${NC}"
+    echo -e "  IP:          ${YELLOW}$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)${NC}"
+elif iwgetid -r > /dev/null 2>&1; then
     echo -e "  Wi-Fi SSID:  ${YELLOW}$(iwgetid -r)${NC}"
     echo -e "  IP Address:  ${YELLOW}$(hostname -I | awk '{print $1}')${NC}"
 else
-    echo -e "  Wi-Fi:       ${YELLOW}Not connected / AP Mode${NC}"
+    echo -e "  Wi-Fi:       ${YELLOW}Not connected${NC}"
 fi
 echo ""
 echo -e "${GREEN}💾 Storage:${NC}"
@@ -208,14 +265,12 @@ echo ""
 echo -e "${GREEN}🧠 Memory:${NC}"
 free -h | awk 'NR==2 {printf "  Used: %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100}'
 echo ""
-echo -e "${GREEN}💡 Available Commands:${NC}"
+echo -e "${GREEN}💡 Commands:${NC}"
 echo -e "  ${YELLOW}help${NC}        - Show all commands"
 echo -e "  ${YELLOW}status${NC}      - System status"
-echo -e "  ${YELLOW}welcome${NC}     - Show this welcome message"
-echo -e "  ${YELLOW}changename${NC}  - Change hostname"
-echo -e "  ${YELLOW}changeip${NC}    - Change AP IP address"
+echo -e "  ${YELLOW}wifi ap${NC}     - Turn on AP mode"
+echo -e "  ${YELLOW}wifi on${NC}     - Turn on client mode"
 echo -e "  ${YELLOW}wifiman${NC}     - Wi-Fi manager"
-echo -e "  ${YELLOW}apsetup${NC}     - Setup access point"
 echo ""
 echo -e "${CYAN}========================================${NC}"
 echo -e "${YELLOW}SSH: ssh ${USER}@$(hostname).local${NC}"
@@ -337,3 +392,5 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo -e "${YELLOW}Type 'help' to see all commands${NC}"
+echo -e "${YELLOW}Type 'wifi ap' to turn on AP mode${NC}"
+echo -e "${YELLOW}Type 'wifi on' to turn on client mode${NC}"
