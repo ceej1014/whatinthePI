@@ -1,5 +1,6 @@
 #!/bin/bash
-# Change Access Point IP Address (NetworkManager compatible)
+# Change Access Point IP Address (NetworkManager version)
+# Updates the IP of the currently selected hotspot profile
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -13,13 +14,33 @@ echo -e "${GREEN}   Change Access Point IP Address${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-if ! systemctl is-active --quiet hostapd; then
-    echo -e "${RED}AP mode is not currently active!${NC}"
-    echo -e "To enable AP mode, run: ${GREEN}apsetup${NC}"
+# Get current hotspot profile
+CONFIG_DIR="/etc/whatinthepi"
+CURRENT_PROFILE_FILE="$CONFIG_DIR/current_profile"
+if [ -f "$CURRENT_PROFILE_FILE" ]; then
+    CURRENT_PROFILE=$(cat "$CURRENT_PROFILE_FILE")
+else
+    CURRENT_PROFILE=""
+fi
+
+if [ -z "$CURRENT_PROFILE" ]; then
+    echo -e "${RED}No hotspot profile selected. Please run 'wifi ap-setup' first.${NC}"
     exit 1
 fi
 
-CURRENT_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+# Check if the profile exists in NetworkManager
+if ! nmcli con show "$CURRENT_PROFILE" &>/dev/null; then
+    echo -e "${RED}Hotspot profile '$CURRENT_PROFILE' not found in NetworkManager.${NC}"
+    echo -e "${YELLOW}Please reconfigure with 'wifi ap-setup'.${NC}"
+    exit 1
+fi
+
+# Get current IP from the connection
+CURRENT_IP=$(nmcli -t -f ipv4.addresses con show "$CURRENT_PROFILE" | cut -d: -f2 | cut -d/ -f1)
+if [ -z "$CURRENT_IP" ]; then
+    # Fallback to wlan0 IP if not set in profile
+    CURRENT_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+fi
 echo -e "${BLUE}Current AP IP: ${GREEN}$CURRENT_IP${NC}"
 echo ""
 
@@ -33,30 +54,35 @@ fi
 
 echo -e "${YELLOW}Changing AP IP from $CURRENT_IP to $NEW_IP...${NC}"
 
-# Stop AP services
-sudo systemctl stop hostapd dnsmasq
-
-# Update dnsmasq config
-NETWORK_PREFIX="${NEW_IP%.*}"
-sudo sed -i "s|^dhcp-range=.*|dhcp-range=${NETWORK_PREFIX}.10,${NETWORK_PREFIX}.100,255.255.255.0,24h|" /etc/dnsmasq.conf
-sudo sed -i "s|^dhcp-option=3,.*|dhcp-option=3,$NEW_IP|" /etc/dnsmasq.conf
-sudo sed -i "s|^dhcp-option=6,.*|dhcp-option=6,$NEW_IP|" /etc/dnsmasq.conf
-
-# Update wlan0 IP (immediate)
-sudo ip addr flush dev wlan0
-sudo ip addr add "${NEW_IP}/24" dev wlan0
-
-# Persist via NetworkManager (Bookworm)
-if command -v nmcli &>/dev/null; then
-    # Remove any existing connection for wlan0
-    sudo nmcli connection delete "wlan0" 2>/dev/null
-    # Create new static connection
-    sudo nmcli connection add type ethernet con-name "wlan0" ifname wlan0 ipv4.method manual ipv4.addresses "${NEW_IP}/24"
+# Stop the AP connection if it's active
+WAS_ACTIVE=false
+if nmcli -t -f NAME con show --active | grep -q "^$CURRENT_PROFILE$"; then
+    WAS_ACTIVE=true
+    echo -e "${YELLOW}Stopping AP mode...${NC}"
+    sudo nmcli connection down "$CURRENT_PROFILE"
+    sleep 1
 fi
 
-# Restart AP services
-sudo systemctl start hostapd dnsmasq
+# Update the connection's IPv4 address
+sudo nmcli connection modify "$CURRENT_PROFILE" ipv4.addresses "$NEW_IP/24"
+sudo nmcli connection modify "$CURRENT_PROFILE" ipv4.gateway "$NEW_IP"
+sudo nmcli connection modify "$CURRENT_PROFILE" ipv4.method shared
+
+# Restart the AP if it was active
+if [ "$WAS_ACTIVE" = true ]; then
+    echo -e "${YELLOW}Restarting AP mode with new IP...${NC}"
+    sudo nmcli connection up "$CURRENT_PROFILE"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ AP restarted successfully.${NC}"
+    else
+        echo -e "${RED}✗ Failed to restart AP. You may need to run 'wifi ap' manually.${NC}"
+    fi
+else
+    echo -e "${YELLOW}AP mode was not active. Changes will apply next time you start it.${NC}"
+fi
 
 echo -e "${GREEN}✓ AP IP changed to $NEW_IP${NC}"
-echo -e "${YELLOW}Note: You may need to reconnect to the AP with the new IP${NC}"
+echo ""
+echo -e "${YELLOW}Note: If the AP was running, it has been restarted.${NC}"
+echo -e "${YELLOW}You may need to reconnect to the AP with the new IP.${NC}"
 echo -e "SSH command: ${GREEN}ssh $(whoami)@$NEW_IP${NC}"
