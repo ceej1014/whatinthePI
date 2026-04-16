@@ -72,7 +72,7 @@ scan_networks() {
     read -p "Press Enter to continue..."
 }
 
-# Function to connect to a network
+# Function to connect to a network (UPDATED - no dhclient dependency)
 connect_network() {
     echo -e "${YELLOW}Available networks:${NC}"
     sudo iwlist wlan0 scan | grep "ESSID" | sort -u | sed 's/^[ \t]*ESSID://g' | tr -d '"'
@@ -110,8 +110,17 @@ EOF"
     
     # Restart networking
     sudo systemctl restart wpa_supplicant
-    sudo dhclient -r wlan0 2>/dev/null || true
-    sudo dhclient wlan0
+    
+    # Request IP address using available method
+    if command -v dhcpcd &> /dev/null; then
+        sudo dhcpcd -n wlan0 2>/dev/null || true
+    elif command -v dhclient &> /dev/null; then
+        sudo dhclient wlan0 2>/dev/null || true
+    else
+        # Fallback - restart interface
+        sudo ip link set wlan0 down
+        sudo ip link set wlan0 up
+    fi
     
     echo -e "${GREEN}Attempting to connect to $SSID...${NC}"
     sleep 5
@@ -129,20 +138,19 @@ EOF"
 # Function to disconnect
 disconnect_network() {
     echo -e "${YELLOW}Disconnecting from current network...${NC}"
-    sudo dhclient -r wlan0
-    sudo killall wpa_supplicant 2>/dev/null || true
+    CURRENT=$(iwgetid -r)
     sudo ip link set wlan0 down
-    echo -e "${GREEN}Disconnected!${NC}"
+    sudo ip link set wlan0 up
+    echo -e "${GREEN}Disconnected from $CURRENT${NC}"
     read -p "Press Enter to continue..."
 }
 
-# Function to turn Wi-Fi ON (FIXED)
+# Function to turn Wi-Fi ON
 wifi_on() {
     echo -e "${YELLOW}Turning Wi-Fi ON...${NC}"
     
     # Unmask wpa_supplicant if it was masked
     if systemctl is-enabled wpa_supplicant 2>/dev/null | grep -q "masked"; then
-        echo -e "${YELLOW}Unmasking wpa_supplicant...${NC}"
         sudo systemctl unmask wpa_supplicant
     fi
     
@@ -157,7 +165,7 @@ wifi_on() {
     read -p "Press Enter to continue..."
 }
 
-# Function to turn Wi-Fi OFF (FIXED)
+# Function to turn Wi-Fi OFF
 wifi_off() {
     echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
     sudo rfkill block wifi
@@ -230,13 +238,9 @@ change_hostname() {
     
     echo -e "${YELLOW}Changing hostname from $(hostname) to $NEW_HOSTNAME...${NC}"
     
-    # Change hostname
     echo "$NEW_HOSTNAME" | sudo tee /etc/hostname
-    
-    # Update hosts file
     sudo sed -i "s/127.0.1.1.*/127.0.1.1\t$NEW_HOSTNAME/" /etc/hosts
     
-    # Update avahi/mDNS for .local resolution
     if command -v avahi-daemon &> /dev/null; then
         sudo systemctl restart avahi-daemon
     fi
@@ -249,7 +253,6 @@ change_hostname() {
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         sudo reboot
     else
-        echo -e "${YELLOW}Remember to reboot later for hostname change to apply${NC}"
         read -p "Press Enter to continue..."
     fi
 }
@@ -260,16 +263,12 @@ change_ap_ip() {
     echo -e "${YELLOW}Change Access Point IP Address${NC}"
     echo -e "${YELLOW}========================================${NC}"
     
-    # Check if AP mode is enabled
     if ! systemctl is-active --quiet hostapd; then
         echo -e "${RED}AP mode is not currently active!${NC}"
-        echo -e "${YELLOW}This feature only works when AP mode is enabled.${NC}"
-        echo -e "${YELLOW}Run 'apsetup' first to enable AP mode.${NC}"
         read -p "Press Enter to continue..."
         return
     fi
     
-    # Get current IP
     CURRENT_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
     echo -e "Current AP IP: ${GREEN}$CURRENT_IP${NC}"
     echo ""
@@ -285,30 +284,22 @@ change_ap_ip() {
     
     echo -e "${YELLOW}Changing AP IP from $CURRENT_IP to $NEW_IP...${NC}"
     
-    # Stop services
     sudo systemctl stop hostapd dnsmasq
     
-    # Update dhcpcd.conf
     if [ -f /etc/dhcpcd.conf ]; then
         sudo sed -i "s/static ip_address=.*/static ip_address=$NEW_IP\/24/" /etc/dhcpcd.conf
     fi
     
-    # Update dnsmasq.conf
     sudo sed -i "s/dhcp-range=.*,/dhcp-range=${NEW_IP%.*}.50,/" /etc/dnsmasq.conf
     sudo sed -i "s/dhcp-option=3,.*/dhcp-option=3,$NEW_IP/" /etc/dnsmasq.conf
     sudo sed -i "s/dhcp-option=6,.*/dhcp-option=6,$NEW_IP/" /etc/dnsmasq.conf
-    sudo sed -i "s/listen-address=.*/listen-address=$NEW_IP/" /etc/dnsmasq.conf
     
-    # Update wlan0 IP
     sudo ip addr del $CURRENT_IP/24 dev wlan0 2>/dev/null || true
     sudo ip addr add $NEW_IP/24 dev wlan0
     
-    # Restart services
     sudo systemctl restart hostapd dnsmasq
     
     echo -e "${GREEN}✓ AP IP changed to $NEW_IP${NC}"
-    echo -e "${YELLOW}Note: You may need to reconnect to the AP with the new IP${NC}"
-    echo ""
     read -p "Press Enter to continue..."
 }
 
@@ -318,18 +309,12 @@ enable_ap_mode() {
     read -p "Continue? (y/n): " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        # Stop client mode
         sudo systemctl stop wpa_supplicant
         sudo systemctl mask wpa_supplicant
-        
-        # Start AP mode
         sudo systemctl unmask hostapd
         sudo systemctl start hostapd
         sudo systemctl start dnsmasq
-        
         echo -e "${GREEN}AP mode enabled!${NC}"
-    else
-        echo -e "${RED}Cancelled${NC}"
     fi
     read -p "Press Enter to continue..."
 }
@@ -341,12 +326,9 @@ disable_ap_mode() {
     sudo systemctl stop dnsmasq
     sudo systemctl disable hostapd
     sudo systemctl disable dnsmasq
-    
-    # Restore wpa_supplicant
     sudo systemctl unmask wpa_supplicant
     sudo systemctl enable wpa_supplicant
     sudo systemctl restart wpa_supplicant
-    
     echo -e "${GREEN}AP mode disabled!${NC}"
     read -p "Press Enter to continue..."
 }
