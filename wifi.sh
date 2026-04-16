@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unified Wi-Fi Manager – Command-line + Interactive menu
-# Includes 'ap-setup' for one‑step hotspot configuration
+# Fixed: no 'local' outside functions, includes 'ap-setup'
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -17,7 +17,7 @@ sudo mkdir -p "$PROFILES_DIR"
 sudo chmod 755 "$CONFIG_DIR" "$PROFILES_DIR"
 
 # -------------------------------------------------------------------
-# Profile management (same as before)
+# Profile management (functions – 'local' is allowed here)
 # -------------------------------------------------------------------
 get_current_profile() {
     if [ -f "$CURRENT_PROFILE_FILE" ]; then
@@ -201,7 +201,7 @@ show_status() {
 }
 
 # -------------------------------------------------------------------
-# Command-line actions
+# Command-line actions (no 'local' here)
 # -------------------------------------------------------------------
 case "$1" in
     on)
@@ -209,7 +209,7 @@ case "$1" in
         ;;
     off)
         echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
-        local cur=$(get_current_profile)
+        cur=$(get_current_profile)
         [ -n "$cur" ] && sudo nmcli connection down "$cur" 2>/dev/null
         sudo nmcli radio wifi off
         sudo ip link set wlan0 down
@@ -237,12 +237,10 @@ case "$1" in
             echo -e "${RED}Password must be at least 8 characters. Using default 'raspberry123'.${NC}"
             pass="raspberry123"
         fi
-        # Create the profile
         save_profile "$prof_name" "$ssid" "$pass"
         save_current_profile "$prof_name"
         echo -e "${GREEN}✓ Hotspot profile '$prof_name' created and selected.${NC}"
         echo -e "${YELLOW}To start the hotspot now, run: wifi ap${NC}"
-        echo -e "${YELLOW}To start automatically on boot, the profile will be used when you run 'wifi ap'.${NC}"
         ;;
     ap-create)
         echo -e "${YELLOW}Create new hotspot profile...${NC}"
@@ -274,16 +272,16 @@ case "$1" in
         ;;
     ap-delete)
         [ -z "$2" ] && { echo -e "${RED}Usage: wifi ap-delete <profile_name>${NC}"; exit 1; }
-        local cur=$(get_current_profile)
+        cur=$(get_current_profile)
         [ "$2" = "$cur" ] && save_current_profile ""
         sudo rm -f "$PROFILES_DIR/${2}.conf"
         sudo nmcli connection delete "$2" 2>/dev/null
         echo -e "${GREEN}✓ Profile '$2' deleted${NC}"
         ;;
     ap-current)
-        local cur=$(get_current_profile)
+        cur=$(get_current_profile)
         if [ -n "$cur" ] && [ -f "$PROFILES_DIR/${cur}.conf" ]; then
-            local ssid=$(grep "^SSID=" "$PROFILES_DIR/${cur}.conf" | cut -d= -f2)
+            ssid=$(grep "^SSID=" "$PROFILES_DIR/${cur}.conf" | cut -d= -f2)
             echo -e "Current profile: ${GREEN}$cur${NC}"
             echo -e "  SSID: ${YELLOW}$ssid${NC}"
         else
@@ -363,7 +361,7 @@ EOF
 esac
 
 # -------------------------------------------------------------------
-# Interactive menu (if no arguments were given)
+# Interactive menu (no 'local' anywhere here)
 # -------------------------------------------------------------------
 if [ -z "$1" ]; then
     while true; do
@@ -437,7 +435,7 @@ if [ -z "$1" ]; then
                 echo ""
                 read -p "Enter profile name to delete: " prof_name
                 if [ -n "$prof_name" ]; then
-                    local cur=$(get_current_profile)
+                    cur=$(get_current_profile)
                     [ "$prof_name" = "$cur" ] && save_current_profile ""
                     sudo rm -f "$PROFILES_DIR/${prof_name}.conf"
                     sudo nmcli connection delete "$prof_name" 2>/dev/null
@@ -493,7 +491,7 @@ if [ -z "$1" ]; then
                 ;;
             11)
                 echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
-                local cur=$(get_current_profile)
+                cur=$(get_current_profile)
                 [ -n "$cur" ] && sudo nmcli connection down "$cur" 2>/dev/null
                 sudo nmcli radio wifi off
                 sudo ip link set wlan0 down
