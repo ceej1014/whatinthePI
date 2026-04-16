@@ -2,6 +2,13 @@
 # One-line installer for Raspberry Pi
 # Usage: curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/auto_setup.sh | bash
 
+# Make itself executable if it's not already
+if [[ ! -x "$0" ]]; then
+    chmod +x "$0"
+    echo -e "\033[0;32m✓ Made auto_setup.sh executable\033[0m"
+    exec "$0" "$@"
+fi
+
 set -e
 
 # Colors for output
@@ -11,6 +18,16 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Check if running interactively
+if [ ! -t 0 ]; then
+    # Running in non-interactive mode (piped input)
+    # Read the first line as the choice
+    read -r choice
+    echo -e "${YELLOW}Non-interactive mode detected. Using choice: $choice${NC}"
+else
+    choice=""
+fi
 
 clear
 echo -e "${GREEN}========================================${NC}"
@@ -29,24 +46,18 @@ else
 fi
 
 # Make all scripts executable
-chmod +x raspi-ap-setup/setup_ap.sh 2>/dev/null || true
-chmod +x wifi_manager/wifi_manager.sh 2>/dev/null || true
-chmod +x help.sh 2>/dev/null || true
-chmod +x quickref.sh 2>/dev/null || true
-chmod +x status.sh 2>/dev/null || true
-chmod +x wifi_helper.sh 2>/dev/null || true
-chmod +x welcome.sh 2>/dev/null || true
-chmod +x version.sh 2>/dev/null || true
-chmod +x update.sh 2>/dev/null || true
-chmod +x changename.sh 2>/dev/null || true
-chmod +x changeip.sh 2>/dev/null || true
-chmod +x uninstall.sh 2>/dev/null || true
+for script in *.sh; do
+    if [ -f "$script" ]; then
+        chmod +x "$script" 2>/dev/null || true
+    fi
+done
+chmod +x raspi-ap-setup/*.sh 2>/dev/null || true
+chmod +x wifi_manager/*.sh 2>/dev/null || true
 
 # Function to create aliases
 create_aliases() {
     echo -e "${YELLOW}Creating aliases...${NC}"
     
-    # Add to .bash_aliases for current user
     cat >> ~/.bash_aliases << 'EOF'
 
 # Raspberry Pi Tools Aliases
@@ -69,7 +80,6 @@ alias netstat='sudo netstat -tulpn'
 alias reboot='sudo reboot'
 alias shutdown='sudo shutdown now'
 
-# Wi-Fi quick commands
 wifion() { sudo rfkill unblock wifi && sudo ip link set wlan0 up; echo "Wi-Fi ON"; }
 wifioff() { sudo rfkill block wifi; echo "Wi-Fi OFF"; }
 wifiscan() { sudo iwlist wlan0 scan | grep -E "ESSID|Quality"; }
@@ -100,15 +110,12 @@ wififorget() {
 wifilist() { sudo grep -E "^[[:space:]]*ssid=" /etc/wpa_supplicant/wpa_supplicant.conf | sed 's/.*ssid="\(.*\)"/\1/'; }
 EOF
 
-    # Source the aliases
     source ~/.bash_aliases 2>/dev/null || true
-    
     echo -e "${GREEN}Aliases created successfully!${NC}"
 }
 
 # Function to create helper scripts
 create_helper_scripts() {
-    # Create status.sh if it doesn't exist
     if [ ! -f ~/whatinthePI/status.sh ]; then
         cat > ~/whatinthePI/status.sh << 'EOF'
 #!/bin/bash
@@ -129,38 +136,22 @@ EOF
         chmod +x ~/whatinthePI/status.sh
     fi
     
-    # Create wifi_helper.sh if it doesn't exist
     if [ ! -f ~/whatinthePI/wifi_helper.sh ]; then
         cat > ~/whatinthePI/wifi_helper.sh << 'EOF'
 #!/bin/bash
 case "$1" in
-    on)
-        sudo rfkill unblock wifi
-        sudo ip link set wlan0 up
-        echo "Wi-Fi turned ON"
-        ;;
-    off)
-        sudo rfkill block wifi
-        echo "Wi-Fi turned OFF"
-        ;;
-    scan)
-        sudo iwlist wlan0 scan | grep -E "ESSID|Quality"
-        ;;
+    on) sudo rfkill unblock wifi && sudo ip link set wlan0 up; echo "Wi-Fi ON";;
+    off) sudo rfkill block wifi; echo "Wi-Fi OFF";;
+    scan) sudo iwlist wlan0 scan | grep -E "ESSID|Quality";;
     status)
         if iwgetid -r > /dev/null 2>&1; then
             echo "Connected to: $(iwgetid -r)"
             echo "IP: $(hostname -I | awk '{print $1}')"
         else
             echo "Not connected to any network"
-        fi
-        ;;
-    disconnect)
-        sudo dhclient -r wlan0
-        echo "Disconnected"
-        ;;
-    list)
-        sudo grep -E "^[[:space:]]*ssid=" /etc/wpa_supplicant/wpa_supplicant.conf | sed 's/.*ssid="\(.*\)"/\1/'
-        ;;
+        fi;;
+    disconnect) sudo dhclient -r wlan0; echo "Disconnected";;
+    list) sudo grep -E "^[[:space:]]*ssid=" /etc/wpa_supplicant/wpa_supplicant.conf | sed 's/.*ssid="\(.*\)"/\1/';;
     connect)
         read -p "Enter SSID: " ssid
         read -s -p "Enter password: " pass
@@ -169,17 +160,10 @@ case "$1" in
         wpa_passphrase "$ssid" "$pass" | sudo tee -a /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null
         sudo systemctl restart wpa_supplicant
         sleep 3
-        wifistatus
-        ;;
+        wifistatus;;
     *)
         echo "Wi-Fi Helper Commands:"
-        echo "  wifi on        - Turn Wi-Fi ON"
-        echo "  wifi off       - Turn Wi-Fi OFF"
-        echo "  wifi scan      - Scan for networks"
-        echo "  wifi status    - Show connection status"
-        echo "  wifi disconnect- Disconnect from network"
-        echo "  wifi connect   - Connect to a network"
-        echo "  wifi list      - List saved networks"
+        echo "  wifi on/off/scan/status/connect/disconnect/list"
         ;;
 esac
 EOF
@@ -187,28 +171,15 @@ EOF
     fi
 }
 
-# Function to setup welcome message with clear RASPI banner
+# Function to setup welcome message
 setup_welcome() {
     echo -e "${YELLOW}Setting up welcome message...${NC}"
     
-    # Create welcome.sh if it doesn't exist
     if [ ! -f ~/whatinthePI/welcome.sh ]; then
         cat > ~/whatinthePI/welcome.sh << 'EOF'
 #!/bin/bash
-# Custom welcome message for Raspberry Pi
-
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-RED='\033[0;31m'
-NC='\033[0m'
-
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; WHITE='\033[1;37m'; RED='\033[0;31m'; NC='\033[0m'
 clear
-
-# Clear RASPI ASCII Art Banner
 echo -e "${RED}"
 echo '   ██████╗  █████╗ ███████╗██████╗ ██╗'
 echo '   ██╔══██╗██╔══██╗██╔════╝██╔══██╗██║'
@@ -220,53 +191,29 @@ echo -e "${NC}"
 echo -e "${WHITE}   Raspberry Pi - Welcome ${USER}!${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
-
-# System info
 echo -e "${GREEN}📊 System Information:${NC}"
 echo -e "  Hostname:    ${YELLOW}$(hostname)${NC}"
 echo -e "  Uptime:      ${YELLOW}$(uptime -p | sed 's/up //')${NC}"
 echo -e "  Kernel:      ${YELLOW}$(uname -r)${NC}"
 echo ""
-
-# Temperature (only on Pi)
 if command -v vcgencmd &> /dev/null; then
-    TEMP=$(vcgencmd measure_temp | cut -d= -f2)
-    echo -e "${GREEN}🌡️  Temperature:${NC} ${YELLOW}$TEMP${NC}"
+    echo -e "${GREEN}🌡️  Temperature:${NC} ${YELLOW}$(vcgencmd measure_temp | cut -d= -f2)${NC}"
+    echo ""
 fi
-echo ""
-
-# Network info
 echo -e "${GREEN}🌐 Network Information:${NC}"
 if iwgetid -r > /dev/null 2>&1; then
     echo -e "  Wi-Fi SSID:  ${YELLOW}$(iwgetid -r)${NC}"
     echo -e "  IP Address:  ${YELLOW}$(hostname -I | awk '{print $1}')${NC}"
 else
     echo -e "  Wi-Fi:       ${YELLOW}Not connected / AP Mode${NC}"
-    if systemctl is-active --quiet hostapd; then
-        AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
-        echo -e "  AP IP:       ${YELLOW}${AP_IP:-1.2.1.1}${NC}"
-    else
-        echo -e "  AP IP:       ${YELLOW}1.2.1.1 (default)${NC}"
-    fi
 fi
 echo ""
-
-# Storage
 echo -e "${GREEN}💾 Storage:${NC}"
 df -h / | awk 'NR==2 {printf "  Used: %s / %s (%s)\n", $3, $2, $5}'
 echo ""
-
-# Memory
 echo -e "${GREEN}🧠 Memory:${NC}"
 free -h | awk 'NR==2 {printf "  Used: %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100}'
 echo ""
-
-# Last login
-echo -e "${GREEN}🔐 Last Login:${NC}"
-last -1 -n 1 | head -1 | sed 's/^/  /' 2>/dev/null || echo "  First login"
-echo ""
-
-# Available commands
 echo -e "${GREEN}💡 Available Commands:${NC}"
 echo -e "  ${YELLOW}help${NC}        - Show all commands"
 echo -e "  ${YELLOW}status${NC}      - System status"
@@ -276,33 +223,41 @@ echo -e "  ${YELLOW}changeip${NC}    - Change AP IP address"
 echo -e "  ${YELLOW}wifiman${NC}     - Wi-Fi manager"
 echo -e "  ${YELLOW}apsetup${NC}     - Setup access point"
 echo ""
-
 echo -e "${CYAN}========================================${NC}"
 EOF
         chmod +x ~/whatinthePI/welcome.sh
     fi
     
-    # Install to /etc/profile.d so it shows on SSH login
     sudo cp ~/whatinthePI/welcome.sh /etc/profile.d/welcome.sh
     sudo chmod +x /etc/profile.d/welcome.sh
-    
-    echo -e "${GREEN}Welcome message installed! It will show every time you SSH in.${NC}"
+    echo -e "${GREEN}Welcome message installed!${NC}"
 }
 
-# Ask what to install
-echo ""
-echo -e "${BLUE}What would you like to do?${NC}"
-echo "1) Setup Access Point (AP Mode) - Create your own Wi-Fi network"
-echo "2) Install Wi-Fi Manager only - Manage existing Wi-Fi connections"
-echo "3) Install all tools + create aliases (no AP setup)"
-echo "4) Full setup - Install everything + run AP setup"
-echo "5) Check for updates"
-echo "6) Change hostname"
-echo "7) Change AP IP address"
-echo "8) Uninstall whatinthePI"
-echo "9) Exit"
-echo ""
-read -p "Choose [1-9]: " choice
+# Ask what to install (only if not already set via pipe)
+if [ -z "$choice" ]; then
+    echo ""
+    echo -e "${BLUE}What would you like to do?${NC}"
+    echo "1) Setup Access Point (AP Mode) - Create your own Wi-Fi network"
+    echo "2) Install Wi-Fi Manager only - Manage existing Wi-Fi connections"
+    echo "3) Install all tools + create aliases (no AP setup)"
+    echo "4) Full setup - Install everything + run AP setup"
+    echo "5) Check for updates"
+    echo "6) Change hostname"
+    echo "7) Change AP IP address"
+    echo "8) Uninstall whatinthePI"
+    echo "9) Exit"
+    echo ""
+    
+    # Clear input buffer before reading
+    read -t 0.1 -n 10000 2>/dev/null || true
+    read -p "Choose [1-9]: " choice
+fi
+
+# Validate choice
+if [[ ! "$choice" =~ ^[1-9]$ ]]; then
+    echo -e "${RED}Invalid option: '$choice'. Please enter a number between 1 and 9.${NC}"
+    exit 1
+fi
 
 case $choice in
     1)
@@ -319,14 +274,6 @@ case $choice in
         create_helper_scripts
         setup_welcome
         echo -e "${GREEN}Wi-Fi Manager installed!${NC}"
-        echo -e "Run it with: ${YELLOW}wifiman${NC} or ${YELLOW}sudo wifi_manager/wifi_manager.sh${NC}"
-        echo ""
-        echo "Quick Wi-Fi commands now available:"
-        echo "  wifi on      - Turn Wi-Fi on"
-        echo "  wifi off     - Turn Wi-Fi off"
-        echo "  wifi scan    - Scan for networks"
-        echo "  wifi status  - Check connection"
-        echo "  wifi connect - Connect to network"
         ;;
     3)
         echo -e "${YELLOW}Installing all tools...${NC}"
@@ -336,20 +283,8 @@ case $choice in
         echo -e "${GREEN}All tools installed!${NC}"
         echo ""
         echo -e "${BLUE}Available commands:${NC}"
-        echo "  help      - Show full help menu"
-        echo "  quickref  - Quick reference card"
-        echo "  status    - Check system status"
-        echo "  welcome   - Show welcome message"
-        echo "  version   - Show version info"
-        echo "  update    - Check for updates"
-        echo "  changename- Change hostname"
-        echo "  changeip  - Change AP IP address"
-        echo "  uninstall - Uninstall all tools"
-        echo "  wifiman   - Open Wi-Fi Manager"
-        echo "  apsetup   - Run AP setup (when ready)"
-        echo "  wifi      - Quick Wi-Fi commands"
-        echo ""
-        echo "Type 'help' to see all available commands"
+        echo "  help, quickref, status, welcome, version, update"
+        echo "  changename, changeip, uninstall, wifiman, apsetup, wifi"
         ;;
     4)
         echo -e "${YELLOW}Full setup: Installing tools and running AP setup...${NC}"
@@ -366,7 +301,6 @@ case $choice in
         if [ -f ~/whatinthePI/update.sh ]; then
             ~/whatinthePI/update.sh
         else
-            echo -e "${YELLOW}Downloading update script...${NC}"
             curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/update.sh | bash
         fi
         ;;
@@ -391,17 +325,12 @@ case $choice in
         if [ -f ~/whatinthePI/uninstall.sh ]; then
             ~/whatinthePI/uninstall.sh
         else
-            echo -e "${YELLOW}Downloading uninstaller...${NC}"
             curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/uninstall.sh | bash
         fi
         ;;
     9)
         echo -e "${GREEN}Exiting...${NC}"
         exit 0
-        ;;
-    *)
-        echo -e "${RED}Invalid option. Exiting.${NC}"
-        exit 1
         ;;
 esac
 
@@ -410,13 +339,6 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Setup Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "${YELLOW}To see all available commands, type:${NC} ${GREEN}help${NC}"
-echo -e "${YELLOW}For quick reference, type:${NC} ${GREEN}quickref${NC}"
-echo -e "${YELLOW}To check system status, type:${NC} ${GREEN}status${NC}"
-echo -e "${YELLOW}To check for updates, type:${NC} ${GREEN}update${NC}"
-echo -e "${YELLOW}To change hostname, type:${NC} ${GREEN}changename${NC}"
-echo -e "${YELLOW}To change AP IP, type:${NC} ${GREEN}changeip${NC}"
-echo -e "${YELLOW}To uninstall, type:${NC} ${GREEN}uninstall${NC}"
-echo -e "${YELLOW}The welcome message will appear every time you SSH in!${NC}"
+echo -e "${YELLOW}Type 'help' to see all available commands${NC}"
+echo -e "${YELLOW}Type 'uninstall' to remove everything${NC}"
 echo ""
-echo -e "${BLUE}Tip: Run 'source ~/.bashrc' to ensure all aliases work${NC}"
