@@ -49,7 +49,7 @@ remove_aliases() {
     if [ -f ~/.bash_aliases ]; then
         cp ~/.bash_aliases ~/.bash_aliases.bak
         echo -e "  Backup saved to: ~/.bash_aliases.bak"
-        sed -i '/# Raspberry Pi Tools Aliases/,/wifilist()/d' ~/.bash_aliases
+        sed -i '/# Raspberry Pi Tools Aliases/,/# END Raspberry Pi Tools Aliases/d' ~/.bash_aliases
         echo -e "  ${GREEN}✓${NC} Removed aliases from .bash_aliases"
     fi
     

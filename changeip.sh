@@ -28,8 +28,8 @@ CURRENT_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
 echo -e "${BLUE}Current AP IP: ${GREEN}$CURRENT_IP${NC}"
 echo ""
 
-read -p "Enter new static IP address for AP [1.2.1.1]: " NEW_IP
-NEW_IP=${NEW_IP:-1.2.1.1}
+read -p "Enter new static IP address for AP [192.168.50.1]: " NEW_IP
+NEW_IP=${NEW_IP:-192.168.50.1}
 
 if [ "$NEW_IP" = "$CURRENT_IP" ]; then
     echo -e "${YELLOW}IP unchanged. Exiting.${NC}"
@@ -45,7 +45,8 @@ sudo systemctl stop hostapd dnsmasq
 sudo sed -i "s/static ip_address=.*/static ip_address=$NEW_IP\/24/" /etc/dhcpcd.conf
 
 # Update dnsmasq.conf
-sudo sed -i "s/dhcp-range=.*,/dhcp-range=${NEW_IP%.*}.50,/" /etc/dnsmasq.conf
+NETWORK_PREFIX="${NEW_IP%.*}"
+sudo sed -i "s|^dhcp-range=.*|dhcp-range=${NETWORK_PREFIX}.10,${NETWORK_PREFIX}.100,255.255.255.0,24h|" /etc/dnsmasq.conf
 sudo sed -i "s/dhcp-option=3,.*/dhcp-option=3,$NEW_IP/" /etc/dnsmasq.conf
 sudo sed -i "s/dhcp-option=6,.*/dhcp-option=6,$NEW_IP/" /etc/dnsmasq.conf
 sudo sed -i "s/listen-address=.*/listen-address=$NEW_IP/" /etc/dnsmasq.conf
@@ -57,5 +58,5 @@ sudo systemctl start hostapd dnsmasq
 echo -e "${GREEN}✓ AP IP changed to $NEW_IP${NC}"
 echo ""
 echo -e "${YELLOW}Note: You may need to reconnect to the AP with the new IP${NC}"
-echo -e "SSH command: ${GREEN}ssh ceej@$NEW_IP${NC}"
+echo -e "SSH command: ${GREEN}ssh $(whoami)@$NEW_IP${NC}"
 echo ""

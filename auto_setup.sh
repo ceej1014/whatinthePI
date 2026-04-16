@@ -56,7 +56,7 @@ sleep 1
 create_aliases() {
     echo -e "${YELLOW}Creating aliases...${NC}"
     
-    sed -i '/# Raspberry Pi Tools Aliases/,/wifilist()/d' ~/.bash_aliases 2>/dev/null || true
+    sed -i '/# Raspberry Pi Tools Aliases/,/# END Raspberry Pi Tools Aliases/d' ~/.bash_aliases 2>/dev/null || true
     
     cat >> ~/.bash_aliases << 'EOF'
 
@@ -114,6 +114,7 @@ wifistatus() {
         echo "Not connected to any network"
     fi
 }
+# END Raspberry Pi Tools Aliases
 EOF
 
     source ~/.bash_aliases 2>/dev/null || true
