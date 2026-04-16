@@ -32,4 +32,4 @@
 ## 🚀 One-Line Install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/auto_setup.sh | bash
+bash -c "$(curl -sSL https://raw.githubusercontent.com/ceej1014/whatinthePI/main/auto_setup.sh)"
