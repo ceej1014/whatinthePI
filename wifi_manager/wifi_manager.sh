@@ -82,6 +82,11 @@ connect_network() {
     read -s -p "Enter password (leave blank for open network): " PASSWORD
     echo ""
     
+    # Unmask wpa_supplicant if needed
+    if systemctl is-enabled wpa_supplicant 2>/dev/null | grep -q "masked"; then
+        sudo systemctl unmask wpa_supplicant
+    fi
+    
     # Create wpa_supplicant entry
     if [ -z "$PASSWORD" ]; then
         # Open network
@@ -131,9 +136,16 @@ disconnect_network() {
     read -p "Press Enter to continue..."
 }
 
-# Function to turn Wi-Fi ON
+# Function to turn Wi-Fi ON (FIXED)
 wifi_on() {
     echo -e "${YELLOW}Turning Wi-Fi ON...${NC}"
+    
+    # Unmask wpa_supplicant if it was masked
+    if systemctl is-enabled wpa_supplicant 2>/dev/null | grep -q "masked"; then
+        echo -e "${YELLOW}Unmasking wpa_supplicant...${NC}"
+        sudo systemctl unmask wpa_supplicant
+    fi
+    
     sudo rfkill unblock wifi
     sudo ip link set wlan0 up
     sudo systemctl restart wpa_supplicant
@@ -145,11 +157,12 @@ wifi_on() {
     read -p "Press Enter to continue..."
 }
 
-# Function to turn Wi-Fi OFF
+# Function to turn Wi-Fi OFF (FIXED)
 wifi_off() {
     echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
     sudo rfkill block wifi
     sudo ip link set wlan0 down
+    sudo systemctl stop wpa_supplicant
     echo -e "${GREEN}Wi-Fi is now OFF${NC}"
     read -p "Press Enter to continue..."
 }
@@ -261,8 +274,8 @@ change_ap_ip() {
     echo -e "Current AP IP: ${GREEN}$CURRENT_IP${NC}"
     echo ""
     
-    read -p "Enter new static IP address for AP [1.2.1.1]: " NEW_IP
-    NEW_IP=${NEW_IP:-1.2.1.1}
+    read -p "Enter new static IP address for AP [192.168.50.1]: " NEW_IP
+    NEW_IP=${NEW_IP:-192.168.50.1}
     
     if [ "$NEW_IP" = "$CURRENT_IP" ]; then
         echo -e "${YELLOW}IP unchanged. Cancelled.${NC}"
@@ -276,7 +289,9 @@ change_ap_ip() {
     sudo systemctl stop hostapd dnsmasq
     
     # Update dhcpcd.conf
-    sudo sed -i "s/static ip_address=.*/static ip_address=$NEW_IP\/24/" /etc/dhcpcd.conf
+    if [ -f /etc/dhcpcd.conf ]; then
+        sudo sed -i "s/static ip_address=.*/static ip_address=$NEW_IP\/24/" /etc/dhcpcd.conf
+    fi
     
     # Update dnsmasq.conf
     sudo sed -i "s/dhcp-range=.*,/dhcp-range=${NEW_IP%.*}.50,/" /etc/dnsmasq.conf
@@ -284,9 +299,12 @@ change_ap_ip() {
     sudo sed -i "s/dhcp-option=6,.*/dhcp-option=6,$NEW_IP/" /etc/dnsmasq.conf
     sudo sed -i "s/listen-address=.*/listen-address=$NEW_IP/" /etc/dnsmasq.conf
     
+    # Update wlan0 IP
+    sudo ip addr del $CURRENT_IP/24 dev wlan0 2>/dev/null || true
+    sudo ip addr add $NEW_IP/24 dev wlan0
+    
     # Restart services
-    sudo systemctl restart dhcpcd
-    sudo systemctl start hostapd dnsmasq
+    sudo systemctl restart hostapd dnsmasq
     
     echo -e "${GREEN}✓ AP IP changed to $NEW_IP${NC}"
     echo -e "${YELLOW}Note: You may need to reconnect to the AP with the new IP${NC}"
@@ -297,25 +315,26 @@ change_ap_ip() {
 # Function to enable AP mode
 enable_ap_mode() {
     echo -e "${YELLOW}WARNING: This will disable client mode and enable Access Point mode${NC}"
-    echo -e "${YELLOW}Make sure you have the AP setup script in the same directory${NC}"
     read -p "Continue? (y/n): " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        if [ -f "./setup_ap.sh" ]; then
-            echo -e "${GREEN}Running AP setup script...${NC}"
-            sudo ./setup_ap.sh
-        else
-            echo -e "${RED}setup_ap.sh not found in current directory!${NC}"
-            echo -e "${YELLOW}Please run the AP setup script manually${NC}"
-            read -p "Press Enter to continue..."
-        fi
+        # Stop client mode
+        sudo systemctl stop wpa_supplicant
+        sudo systemctl mask wpa_supplicant
+        
+        # Start AP mode
+        sudo systemctl unmask hostapd
+        sudo systemctl start hostapd
+        sudo systemctl start dnsmasq
+        
+        echo -e "${GREEN}AP mode enabled!${NC}"
     else
         echo -e "${RED}Cancelled${NC}"
-        read -p "Press Enter to continue..."
     fi
+    read -p "Press Enter to continue..."
 }
 
-# Function to disable AP mode (back to client)
+# Function to disable AP mode
 disable_ap_mode() {
     echo -e "${YELLOW}Disabling Access Point mode and restoring client mode...${NC}"
     sudo systemctl stop hostapd
@@ -324,15 +343,12 @@ disable_ap_mode() {
     sudo systemctl disable dnsmasq
     
     # Restore wpa_supplicant
+    sudo systemctl unmask wpa_supplicant
     sudo systemctl enable wpa_supplicant
     sudo systemctl restart wpa_supplicant
     
-    # Restore dhcpcd
-    sudo systemctl restart dhcpcd
-    
-    echo -e "${GREEN}AP mode disabled! Rebooting in 3 seconds...${NC}"
-    sleep 3
-    sudo reboot
+    echo -e "${GREEN}AP mode disabled!${NC}"
+    read -p "Press Enter to continue..."
 }
 
 # Main loop
