@@ -1,6 +1,5 @@
 #!/bin/bash
-# Raspberry Pi 4B - Access Point Setup (NetworkManager compatible)
-# Works on modern Raspberry Pi OS
+# Raspberry Pi 4B - Access Point Setup using NetworkManager (persistent after reboot)
 
 set -e
 
@@ -12,17 +11,16 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Raspberry Pi 4B - Access Point Setup${NC}"
+echo -e "${GREEN}Raspberry Pi 4B - Access Point Setup (Persistent)${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 # Default values
 DEFAULT_HOSTNAME="ceejay"
 DEFAULT_USERNAME="ceej"
-DEFAULT_IP="192.168.50.1"
 DEFAULT_SSID="RPi_Network"
 DEFAULT_PASSWORD="raspberry123"
 
-echo -e "${YELLOW}Using IP: $DEFAULT_IP${NC}"
+echo -e "${YELLOW}This setup uses NetworkManager hotspot (survives reboots).${NC}"
 echo ""
 
 # Get user input
@@ -32,21 +30,23 @@ HOSTNAME=${HOSTNAME:-$DEFAULT_HOSTNAME}
 read -p "Enter username for SSH login [$DEFAULT_USERNAME]: " USERNAME
 USERNAME=${USERNAME:-$DEFAULT_USERNAME}
 
-read -p "Enter AP IP address [$DEFAULT_IP]: " STATIC_IP
-STATIC_IP=${STATIC_IP:-$DEFAULT_IP}
-
 read -p "Enter Wi-Fi SSID (network name) [$DEFAULT_SSID]: " SSID
 SSID=${SSID:-$DEFAULT_SSID}
 
-read -s -p "Enter Wi-Fi password (min 8 chars) [$DEFAULT_PASSWORD]: " PASSWORD
-echo ""
-PASSWORD=${PASSWORD:-$DEFAULT_PASSWORD}
+while true; do
+    read -s -p "Enter Wi-Fi password (min 8 chars) [$DEFAULT_PASSWORD]: " PASSWORD
+    echo ""
+    PASSWORD=${PASSWORD:-$DEFAULT_PASSWORD}
+    if [ ${#PASSWORD} -ge 8 ]; then
+        break
+    fi
+    echo -e "${RED}Password must be at least 8 characters.${NC}"
+done
 
 # Confirm
 echo -e "\n${YELLOW}Confirm settings:${NC}"
 echo -e "  Hostname:  ${GREEN}$HOSTNAME${NC}"
 echo -e "  Username:  ${GREEN}$USERNAME${NC}"
-echo -e "  AP IP:     ${GREEN}$STATIC_IP${NC}"
 echo -e "  SSID:      ${GREEN}$SSID${NC}"
 echo -e "  Password:  ${GREEN}${PASSWORD:0:4}***${NC}"
 echo ""
@@ -67,87 +67,55 @@ if ! id "$USERNAME" &>/dev/null; then
     sudo usermod -aG sudo "$USERNAME"
 fi
 
-# Install packages
-echo -e "\n${GREEN}[1/5] Installing packages...${NC}"
-sudo apt update
-sudo apt install -y hostapd dnsmasq
+# --- Remove old hostapd/dnsmasq (if any) to avoid conflicts ---
+echo -e "\n${GREEN}[1/4] Removing legacy AP services...${NC}"
+sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
+sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
+sudo systemctl mask hostapd dnsmasq 2>/dev/null || true
+sudo apt remove -y hostapd dnsmasq 2>/dev/null || true
 
-# Stop services
-echo -e "\n${GREEN}[2/5] Stopping services...${NC}"
-sudo systemctl stop hostapd 2>/dev/null || true
-sudo systemctl stop dnsmasq 2>/dev/null || true
-sudo systemctl stop wpa_supplicant 2>/dev/null || true
+# --- Create NetworkManager hotspot (persistent) ---
+echo -e "\n${GREEN}[2/4] Creating NetworkManager hotspot...${NC}"
+# Delete any existing connection with the same SSID to avoid conflict
+sudo nmcli connection delete "$SSID" 2>/dev/null || true
 
-# Configure network
-echo -e "\n${GREEN}[3/5] Configuring network...${NC}"
-sudo nmcli device set wlan0 managed no 2>/dev/null || true
-sudo ip link set wlan0 down
-sudo ip addr flush dev wlan0
-sudo ip addr add ${STATIC_IP}/24 dev wlan0
-sudo ip link set wlan0 up
+# Create the hotspot (autoconnect = yes ensures it starts on boot)
+sudo nmcli connection add type wifi ifname wlan0 con-name "$SSID" autoconnect yes ssid "$SSID" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PASSWORD"
 
-# Configure hostapd
-echo -e "\n${GREEN}[4/5] Configuring hostapd...${NC}"
-sudo tee /etc/hostapd/hostapd.conf > /dev/null << EOF
-interface=wlan0
-driver=nl80211
-ssid=$SSID
-hw_mode=g
-channel=7
-wmm_enabled=1
-macaddr_acl=0
-auth_algs=1
-ignore_broadcast_ssid=0
-wpa=2
-wpa_passphrase=$PASSWORD
-wpa_key_mgmt=WPA-PSK
-wpa_pairwise=TKIP
-rsn_pairwise=CCMP
-EOF
+# Set high priority so it doesn't get overridden
+sudo nmcli connection modify "$SSID" connection.autoconnect-priority 100
 
-sudo sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
-
-# Configure dnsmasq
-NETWORK_PREFIX=$(echo $STATIC_IP | cut -d. -f1-3)
-sudo tee /etc/dnsmasq.conf > /dev/null << EOF
-interface=wlan0
-dhcp-range=${NETWORK_PREFIX}.10,${NETWORK_PREFIX}.100,255.255.255.0,24h
-dhcp-option=3,$STATIC_IP
-dhcp-option=6,$STATIC_IP
-server=8.8.8.8
-EOF
-
-# Start services
-echo -e "\n${GREEN}[5/5] Starting services...${NC}"
-sudo systemctl unmask hostapd
-sudo systemctl enable hostapd
-sudo systemctl start hostapd
-sudo systemctl enable dnsmasq
-sudo systemctl start dnsmasq
-
-# Set hostname
-echo "$HOSTNAME" | sudo tee /etc/hostname
+# --- Set hostname ---
+echo -e "\n${GREEN}[3/4] Setting hostname...${NC}"
+echo "$HOSTNAME" | sudo tee /etc/hostname > /dev/null
 sudo sed -i "s/127.0.1.1.*/127.0.1.1\t$HOSTNAME/" /etc/hosts
+sudo hostnamectl set-hostname "$HOSTNAME" 2>/dev/null || true
 
-# Enable SSH
+# --- Enable SSH ---
+echo -e "\n${GREEN}[4/4] Enabling SSH...${NC}"
 sudo systemctl enable ssh
 sudo systemctl start ssh
 
-# Done
+# --- Start the hotspot ---
+echo -e "\n${GREEN}Starting hotspot...${NC}"
+sudo nmcli connection up "$SSID"
+
+# --- Done ---
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}Setup Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "${BLUE}Wi-Fi Network:${NC}"
-echo -e "  SSID:      ${GREEN}$SSID${NC}"
-echo -e "  Password:  ${GREEN}$PASSWORD${NC}"
-echo -e "  IP:        ${GREEN}$STATIC_IP${NC}"
+echo -e "Wi-Fi Network: ${GREEN}$SSID${NC}"
+echo -e "Password:      ${GREEN}$PASSWORD${NC}"
+echo -e "AP IP:         ${GREEN}10.42.0.1${NC} (default, managed by NetworkManager)"
 echo ""
 echo -e "${BLUE}SSH Access:${NC}"
 echo -e "  ${GREEN}ssh $USERNAME@$HOSTNAME.local${NC}"
-echo -e "  ${GREEN}ssh $USERNAME@$STATIC_IP${NC}"
 echo ""
-
+echo -e "${YELLOW}The hotspot will automatically start after every reboot.${NC}"
+echo -e "${YELLOW}To stop it temporarily: sudo nmcli connection down '$SSID'${NC}"
+echo -e "${YELLOW}To restart it: sudo nmcli connection up '$SSID'${NC}"
+echo ""
 read -p "Reboot now? (y/n): " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
