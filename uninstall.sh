@@ -72,7 +72,7 @@ remove_welcome() {
     echo -e "  ${GREEN}✓${NC} Welcome message removed"
 }
 
-# Function to disable AP mode if active
+# Function to disable AP mode and restore wpa_supplicant
 disable_ap_mode() {
     echo -e "${BLUE}Checking for AP mode...${NC}"
     
@@ -85,10 +85,16 @@ disable_ap_mode() {
         echo -e "  ${GREEN}✓${NC} AP mode not active"
     fi
     
-    if ! systemctl is-enabled --quiet wpa_supplicant 2>/dev/null; then
-        sudo systemctl enable wpa_supplicant
-        echo -e "  ${GREEN}✓${NC} Restored wpa_supplicant"
+    # Unmask wpa_supplicant (if it was masked by AP mode)
+    if systemctl is-enabled wpa_supplicant 2>/dev/null | grep -q "masked"; then
+        echo -e "  ${YELLOW}Unmasking wpa_supplicant...${NC}"
+        sudo systemctl unmask wpa_supplicant
     fi
+    
+    # Enable and start wpa_supplicant for normal Wi-Fi client mode
+    sudo systemctl enable wpa_supplicant
+    sudo systemctl restart wpa_supplicant
+    echo -e "  ${GREEN}✓${NC} Restored wpa_supplicant"
 }
 
 # Function to restore original network configs
