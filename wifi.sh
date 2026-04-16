@@ -1,8 +1,6 @@
 #!/bin/bash
 # Unified Wi-Fi Manager – Command-line + Interactive menu
-# Usage:
-#   wifi               → opens interactive menu
-#   wifi on|off|ap|ap-setup|ap-off|status|scan|connect → quick commands
+# Uses NetworkManager for both client and AP mode (Bookworm compatible)
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -14,23 +12,28 @@ NC='\033[0m'
 # ------------------------------------------------------------
 # Helper functions
 # ------------------------------------------------------------
+HOTSPOT_NAME="RPi_Network"   # default SSID, can be changed via ap-setup
+HOTSPOT_PASS="raspberry123"
+
 is_ap_mode() {
-    systemctl is-active --quiet hostapd 2>/dev/null && [ -f /etc/hostapd/hostapd.conf ]
+    # Check if a hotspot connection is active
+    nmcli -t -f NAME,DEVICE,TYPE con show --active | grep -q ":wlan0:802-11-wireless" && \
+    nmcli -t -f 802-11-wireless.mode con show --active | grep -q "ap"
 }
 
 show_status() {
     if is_ap_mode; then
         echo -e "${YELLOW}Mode: ACCESS POINT${NC}"
         AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
-        SSID=$(sudo grep "^ssid" /etc/hostapd/hostapd.conf 2>/dev/null | cut -d= -f2)
+        SSID=$(nmcli -t -f 802-11-wireless.ssid con show --active | head -1)
         echo -e "  AP SSID: ${GREEN}${SSID:-unknown}${NC}"
         echo -e "  AP IP:   ${GREEN}${AP_IP:-unknown}${NC}"
     elif iwgetid -r > /dev/null 2>&1; then
         echo -e "${GREEN}Mode: CLIENT (connected)${NC}"
         echo -e "  Connected to: ${GREEN}$(iwgetid -r)${NC}"
         echo -e "  Wi-Fi IP:     ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
-    elif systemctl is-active --quiet wpa_supplicant; then
-        echo -e "${YELLOW}Mode: CLIENT (not connected)${NC}"
+    elif nmcli -t -f DEVICE,STATE dev status | grep -q "wlan0:connected"; then
+        echo -e "${YELLOW}Mode: CLIENT (not connected to any network)${NC}"
     else
         echo -e "${RED}Wi-Fi is OFF${NC}"
     fi
@@ -49,10 +52,11 @@ show_status() {
 case "$1" in
     on)
         echo -e "${YELLOW}Switching to Client Mode...${NC}"
+        # Turn off AP if active
         if is_ap_mode; then
-            sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
-            sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
+            sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
         fi
+        # Ensure wpa_supplicant is running
         sudo systemctl unmask wpa_supplicant 2>/dev/null || true
         sudo systemctl enable wpa_supplicant
         sudo systemctl restart wpa_supplicant
@@ -62,39 +66,53 @@ case "$1" in
         ;;
     off)
         echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
-        sudo systemctl stop wpa_supplicant hostapd dnsmasq 2>/dev/null || true
-        sudo rfkill block wifi
+        if is_ap_mode; then
+            sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+        fi
+        sudo nmcli radio wifi off
         sudo ip link set wlan0 down
         echo -e "${GREEN}✓ Wi-Fi OFF${NC}"
         ;;
     ap)
         echo -e "${YELLOW}Switching to AP Mode...${NC}"
-        if ! [ -f /etc/hostapd/hostapd.conf ]; then
-            echo -e "${RED}AP not configured yet. Run 'wifi ap-setup' first.${NC}"
+        # Check if hotspot profile exists; if not, run setup
+        if ! nmcli con show "$HOTSPOT_NAME" &>/dev/null; then
+            echo -e "${RED}Hotspot not configured. Run 'wifi ap-setup' first.${NC}"
             exit 1
         fi
-        sudo systemctl stop wpa_supplicant 2>/dev/null || true
-        sudo systemctl mask wpa_supplicant
-        sudo systemctl unmask hostapd
-        sudo systemctl enable hostapd dnsmasq
-        sudo systemctl start hostapd dnsmasq
+        # Turn off any client Wi-Fi
+        sudo nmcli radio wifi off
+        sudo ip link set wlan0 down
+        # Bring up the hotspot
+        sudo nmcli connection up "$HOTSPOT_NAME"
         echo -e "${GREEN}✓ AP mode enabled${NC}"
         ;;
     ap-setup)
-        echo -e "${YELLOW}Running Access Point setup...${NC}"
-        if [ -f ~/whatinthePI/raspi-ap-setup/setup_ap.sh ]; then
-            sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh
-        else
-            echo -e "${RED}AP setup script not found. Please reinstall whatinthePI.${NC}"
-            exit 1
+        echo -e "${YELLOW}Configuring Access Point hotspot...${NC}"
+        read -p "Enter SSID for hotspot [${HOTSPOT_NAME}]: " ssid
+        ssid=${ssid:-$HOTSPOT_NAME}
+        read -s -p "Enter password (min 8 chars) [${HOTSPOT_PASS}]: " pass
+        echo ""
+        pass=${pass:-$HOTSPOT_PASS}
+        if [ ${#pass} -lt 8 ]; then
+            echo -e "${RED}Password must be at least 8 characters. Using default.${NC}"
+            pass=$HOTSPOT_PASS
         fi
+        # Delete existing profile if any
+        sudo nmcli connection delete "$HOTSPOT_NAME" 2>/dev/null
+        # Create hotspot with NetworkManager (persistent, autoconnect)
+        sudo nmcli connection add type wifi ifname wlan0 con-name "$HOTSPOT_NAME" autoconnect yes ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+        sudo nmcli connection modify "$HOTSPOT_NAME" connection.autoconnect-priority 100
+        echo -e "${GREEN}✓ Hotspot configured. Start it with 'wifi ap'${NC}"
+        # Update global variables for this session
+        HOTSPOT_NAME="$ssid"
+        HOTSPOT_PASS="$pass"
         ;;
     ap-off)
         echo -e "${YELLOW}Turning OFF AP Mode...${NC}"
-        sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
-        sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
-        sudo systemctl unmask wpa_supplicant
-        sudo systemctl enable wpa_supplicant
+        sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+        # Restore normal Wi-Fi client
+        sudo nmcli radio wifi on
         sudo systemctl restart wpa_supplicant
         echo -e "${GREEN}✓ AP mode disabled, client mode restored${NC}"
         ;;
@@ -122,9 +140,14 @@ case "$1" in
             echo -e "${RED}No SSID entered.${NC}"
             exit 1
         fi
-        # Use interactive connection (most reliable)
-        echo -e "${YELLOW}Attempting to connect to $ssid...${NC}"
-        sudo nmcli --ask device wifi connect "$ssid"
+        read -s -p "Enter password (press Enter for open network): " pass
+        echo ""
+        sudo nmcli connection delete "$ssid" 2>/dev/null
+        if [ -z "$pass" ]; then
+            sudo nmcli device wifi connect "$ssid"
+        else
+            sudo nmcli device wifi connect "$ssid" password "$pass"
+        fi
         sleep 3
         if iwgetid -r 2>/dev/null | grep -q "$ssid"; then
             echo -e "${GREEN}✓ Connected to $ssid${NC}"
@@ -137,9 +160,9 @@ case "$1" in
         echo "  wifi           - Open interactive menu"
         echo "  wifi on        - Switch to Client mode"
         echo "  wifi off       - Turn Wi-Fi OFF completely"
-        echo "  wifi ap        - Switch to AP mode (hotspot) – requires configured AP"
-        echo "  wifi ap-setup  - Run the AP configuration script"
-        echo "  wifi ap-off    - Turn OFF AP mode, back to client"
+        echo "  wifi ap        - Switch to AP mode (hotspot)"
+        echo "  wifi ap-setup  - Configure hotspot (SSID, password)"
+        echo "  wifi ap-off    - Turn off AP mode, back to client"
         echo "  wifi status    - Show current mode and IPs"
         echo "  wifi scan      - Scan for networks (client mode only)"
         echo "  wifi connect   - Connect to a network (client mode only)"
@@ -170,7 +193,7 @@ if [ -z "$1" ]; then
         echo -e "${BLUE}Options:${NC}"
         echo "1)  Switch to Client Mode (connect to Wi-Fi)"
         echo "2)  Switch to AP Mode (create hotspot)"
-        echo "3)  Run AP Setup (configure hotspot)"
+        echo "3)  Configure Hotspot (SSID, password)"
         echo "4)  Turn OFF AP Mode (back to client)"
         echo "5)  Scan for networks"
         echo "6)  Connect to a network"
@@ -184,8 +207,7 @@ if [ -z "$1" ]; then
             1)
                 echo -e "${YELLOW}Switching to Client Mode...${NC}"
                 if is_ap_mode; then
-                    sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
-                    sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
+                    sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
                 fi
                 sudo systemctl unmask wpa_supplicant 2>/dev/null || true
                 sudo systemctl enable wpa_supplicant
@@ -197,33 +219,39 @@ if [ -z "$1" ]; then
                 ;;
             2)
                 echo -e "${YELLOW}Switching to AP Mode...${NC}"
-                if ! [ -f /etc/hostapd/hostapd.conf ]; then
-                    echo -e "${RED}AP not configured yet. Please run option 3 first.${NC}"
+                if ! nmcli con show "$HOTSPOT_NAME" &>/dev/null; then
+                    echo -e "${RED}Hotspot not configured. Please run option 3 first.${NC}"
                 else
-                    sudo systemctl stop wpa_supplicant 2>/dev/null || true
-                    sudo systemctl mask wpa_supplicant
-                    sudo systemctl unmask hostapd
-                    sudo systemctl enable hostapd dnsmasq
-                    sudo systemctl start hostapd dnsmasq
+                    sudo nmcli radio wifi off
+                    sudo ip link set wlan0 down
+                    sudo nmcli connection up "$HOTSPOT_NAME"
                     echo -e "${GREEN}✓ AP mode enabled${NC}"
                 fi
                 read -p "Press Enter..."
                 ;;
             3)
-                echo -e "${YELLOW}Running AP Setup...${NC}"
-                if [ -f ~/whatinthePI/raspi-ap-setup/setup_ap.sh ]; then
-                    sudo ~/whatinthePI/raspi-ap-setup/setup_ap.sh
-                else
-                    echo -e "${RED}AP setup script not found.${NC}"
+                echo -e "${YELLOW}Configuring Hotspot...${NC}"
+                read -p "Enter SSID for hotspot [${HOTSPOT_NAME}]: " ssid
+                ssid=${ssid:-$HOTSPOT_NAME}
+                read -s -p "Enter password (min 8 chars) [${HOTSPOT_PASS}]: " pass
+                echo ""
+                pass=${pass:-$HOTSPOT_PASS}
+                if [ ${#pass} -lt 8 ]; then
+                    echo -e "${RED}Password must be at least 8 characters. Using default.${NC}"
+                    pass=$HOTSPOT_PASS
                 fi
+                sudo nmcli connection delete "$HOTSPOT_NAME" 2>/dev/null
+                sudo nmcli connection add type wifi ifname wlan0 con-name "$ssid" autoconnect yes ssid "$ssid" mode ap ipv4.method shared wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass"
+                sudo nmcli connection modify "$ssid" connection.autoconnect-priority 100
+                HOTSPOT_NAME="$ssid"
+                HOTSPOT_PASS="$pass"
+                echo -e "${GREEN}✓ Hotspot configured. Start it with option 2.${NC}"
                 read -p "Press Enter..."
                 ;;
             4)
                 echo -e "${YELLOW}Turning OFF AP Mode...${NC}"
-                sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
-                sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
-                sudo systemctl unmask wpa_supplicant
-                sudo systemctl enable wpa_supplicant
+                sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+                sudo nmcli radio wifi on
                 sudo systemctl restart wpa_supplicant
                 echo -e "${GREEN}✓ AP mode disabled, client mode restored${NC}"
                 read -p "Press Enter..."
@@ -241,9 +269,21 @@ if [ -z "$1" ]; then
                 if is_ap_mode; then
                     echo -e "${RED}Cannot connect in AP mode. Switch to Client Mode first.${NC}"
                 else
+                    echo -e "${YELLOW}Available networks:${NC}"
+                    sudo iwlist wlan0 scan 2>/dev/null | grep "ESSID" | sort -u | sed 's/^[ \t]*ESSID://g' | tr -d '"'
+                    echo ""
                     read -p "Enter SSID: " ssid
-                    if [ -n "$ssid" ]; then
-                        sudo nmcli --ask device wifi connect "$ssid"
+                    if [ -z "$ssid" ]; then
+                        echo -e "${RED}No SSID entered.${NC}"
+                    else
+                        read -s -p "Enter password (press Enter for open network): " pass
+                        echo ""
+                        sudo nmcli connection delete "$ssid" 2>/dev/null
+                        if [ -z "$pass" ]; then
+                            sudo nmcli device wifi connect "$ssid"
+                        else
+                            sudo nmcli device wifi connect "$ssid" password "$pass"
+                        fi
                         sleep 2
                         if iwgetid -r | grep -q "$ssid"; then
                             echo -e "${GREEN}✓ Connected${NC}"
@@ -256,8 +296,10 @@ if [ -z "$1" ]; then
                 ;;
             7)
                 echo -e "${YELLOW}Turning Wi-Fi OFF...${NC}"
-                sudo systemctl stop wpa_supplicant hostapd dnsmasq 2>/dev/null || true
-                sudo rfkill block wifi
+                if is_ap_mode; then
+                    sudo nmcli connection down "$HOTSPOT_NAME" 2>/dev/null
+                fi
+                sudo nmcli radio wifi off
                 sudo ip link set wlan0 down
                 echo -e "${GREEN}✓ Wi-Fi OFF${NC}"
                 read -p "Press Enter..."
@@ -265,8 +307,10 @@ if [ -z "$1" ]; then
             8)
                 if is_ap_mode; then
                     echo -e "Mode: ACCESS POINT"
-                    echo -e "AP IP: $(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)"
-                    echo -e "SSID: $(sudo grep "^ssid" /etc/hostapd/hostapd.conf | cut -d= -f2)"
+                    SSID=$(nmcli -t -f 802-11-wireless.ssid con show --active | head -1)
+                    IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+                    echo -e "  SSID: $SSID"
+                    echo -e "  IP:   $IP"
                 elif iwgetid -r > /dev/null 2>&1; then
                     echo -e "Connected to: $(iwgetid -r)"
                     echo -e "IP Address: $(hostname -I | awk '{print $1}')"
