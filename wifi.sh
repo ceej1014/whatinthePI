@@ -2,7 +2,7 @@
 # Unified Wi-Fi Manager – Command-line + Interactive menu
 # Usage:
 #   wifi               → opens interactive menu
-#   wifi on|off|ap|ap-setup|status|scan|connect → quick commands
+#   wifi on|off|ap|ap-setup|ap-off|status|scan|connect → quick commands
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
