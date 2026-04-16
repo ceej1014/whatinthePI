@@ -88,32 +88,9 @@ case "$1" in
             echo -e "${RED}No SSID entered.${NC}"
             exit 1
         fi
-        read -s -p "Enter password (press Enter for open network): " pass
-        echo ""
-
-        # Delete any existing connection profile for this SSID to avoid conflicts
-        sudo nmcli connection delete "$ssid" 2>/dev/null
-
-        if [ -z "$pass" ]; then
-            # Open network: no security
-            echo -e "${YELLOW}Connecting to open network: $ssid${NC}"
-            sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid"
-            sudo nmcli connection modify "$ssid" wifi-sec.key-mgmt none
-            sudo nmcli connection up "$ssid"
-        else
-            # Secured network: WPA2-PSK - use two-step method to avoid password parsing issues
-            echo -e "${YELLOW}Connecting to secured network: $ssid${NC}"
-            # Create connection without password first
-            sudo nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid"
-            # Set security and password
-            sudo nmcli connection modify "$ssid" wifi-sec.key-mgmt wpa-psk
-            sudo nmcli connection modify "$ssid" wifi-sec.psk "$pass"
-            # Set autoconnect
-            sudo nmcli connection modify "$ssid" connection.autoconnect yes
-            # Bring it up
-            sudo nmcli connection up "$ssid"
-        fi
-
+        # Use interactive connection (most reliable, handles passwords correctly)
+        echo -e "${YELLOW}Attempting to connect to $ssid...${NC}"
+        sudo nmcli --ask device wifi connect "$ssid"
         sleep 3
         if iwgetid -r 2>/dev/null | grep -q "$ssid"; then
             echo -e "${GREEN}✓ Connected to $ssid${NC}"
