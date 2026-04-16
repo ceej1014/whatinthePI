@@ -1,18 +1,14 @@
 #!/bin/bash
 # Custom welcome message for Raspberry Pi
 
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 RED='\033[0;31m'
 NC='\033[0m'
 
 clear
-
-# Clear RASPI ASCII Art Banner
 echo -e "${RED}"
 echo '   ██████╗  █████╗ ███████╗██████╗ ██╗'
 echo '   ██╔══██╗██╔══██╗██╔════╝██╔══██╗██║'
@@ -32,12 +28,12 @@ echo -e "  Uptime:      ${YELLOW}$(uptime -p | sed 's/up //')${NC}"
 echo -e "  Kernel:      ${YELLOW}$(uname -r)${NC}"
 echo ""
 
-# Temperature
+# Temperature (only on Pi)
 if command -v vcgencmd &> /dev/null; then
     TEMP=$(vcgencmd measure_temp | cut -d= -f2)
     echo -e "${GREEN}🌡️  Temperature:${NC} ${YELLOW}$TEMP${NC}"
+    echo ""
 fi
-echo ""
 
 # Network info
 echo -e "${GREEN}🌐 Network Information:${NC}"
@@ -46,13 +42,6 @@ if iwgetid -r > /dev/null 2>&1; then
     echo -e "  IP Address:  ${YELLOW}$(hostname -I | awk '{print $1}')${NC}"
 else
     echo -e "  Wi-Fi:       ${YELLOW}Not connected / AP Mode${NC}"
-    # Check if AP mode is active
-    if systemctl is-active --quiet hostapd; then
-        AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
-        echo -e "  AP IP:       ${YELLOW}${AP_IP:-1.2.1.1}${NC}"
-    else
-        echo -e "  AP IP:       ${YELLOW}1.2.1.1 (default)${NC}"
-    fi
 fi
 echo ""
 
@@ -66,9 +55,28 @@ echo -e "${GREEN}🧠 Memory:${NC}"
 free -h | awk 'NR==2 {printf "  Used: %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100}'
 echo ""
 
-# Last login
+# Last login (fix for systems without 'last' command)
 echo -e "${GREEN}🔐 Last Login:${NC}"
-last -1 -n 1 | head -1 | sed 's/^/  /' 2>/dev/null || echo "  First login"
+if command -v last &> /dev/null; then
+    LAST_LOGIN=$(last -1 -n 1 2>/dev/null | head -1)
+    if [ -n "$LAST_LOGIN" ]; then
+        echo -e "  ${YELLOW}$LAST_LOGIN${NC}"
+    else
+        echo -e "  ${YELLOW}First login or no login history${NC}"
+    fi
+else
+    # Alternative: show last login from log file
+    if [ -f /var/log/auth.log ]; then
+        LAST_SSH=$(grep "Accepted password" /var/log/auth.log 2>/dev/null | tail -1 | awk '{print $1, $2, $3, $11}')
+        if [ -n "$LAST_SSH" ]; then
+            echo -e "  ${YELLOW}Last SSH: $LAST_SSH${NC}"
+        else
+            echo -e "  ${YELLOW}No login history found${NC}"
+        fi
+    else
+        echo -e "  ${YELLOW}Login history not available${NC}"
+    fi
+fi
 echo ""
 
 # Available commands
@@ -82,4 +90,6 @@ echo -e "  ${YELLOW}wifiman${NC}     - Wi-Fi manager"
 echo -e "  ${YELLOW}apsetup${NC}     - Setup access point"
 echo ""
 
+echo -e "${CYAN}========================================${NC}"
+echo -e "${YELLOW}SSH: ssh ${USER}@$(hostname).local${NC}"
 echo -e "${CYAN}========================================${NC}"
