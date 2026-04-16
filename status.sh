@@ -1,5 +1,5 @@
 #!/bin/bash
-# System Status - Fixed AP detection
+# System Status - Fixed AP detection and memory calculation
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -8,9 +8,16 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Fixed AP detection
-is_ap_mode() { 
-    systemctl is-active --quiet hostapd 2>/dev/null && [ -f /etc/hostapd/hostapd.conf ]
+# Function to detect AP mode (matches wifi.sh logic)
+is_ap_mode() {
+    local CONFIG_DIR="/etc/whatinthepi"
+    local CURRENT_PROFILE_FILE="$CONFIG_DIR/current_profile"
+    if [ -f "$CURRENT_PROFILE_FILE" ]; then
+        local cur=$(cat "$CURRENT_PROFILE_FILE")
+        [ -n "$cur" ] && nmcli -t -f NAME con show --active 2>/dev/null | grep -q "^$cur$"
+    else
+        false
+    fi
 }
 
 clear
@@ -45,19 +52,23 @@ echo -e "${BLUE}─────────────────────�
 
 if is_ap_mode; then
     echo -e "  Mode:            ${YELLOW}ACCESS POINT${NC}"
-    AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
-    SSID=$(sudo grep "^ssid" /etc/hostapd/hostapd.conf 2>/dev/null | cut -d= -f2)
-    echo -e "  AP IP:           ${GREEN}$AP_IP${NC}"
-    echo -e "  SSID:            ${GREEN}$SSID${NC}"
+    # Get AP IP from the active hotspot connection (no 'local' here)
+    cur=$(cat /etc/whatinthepi/current_profile 2>/dev/null)
+    if [ -n "$cur" ]; then
+        AP_IP=$(nmcli -t -f ipv4.addresses con show "$cur" 2>/dev/null | cut -d: -f2 | cut -d/ -f1)
+        SSID=$(grep "^SSID=" "/etc/whatinthepi/profiles/${cur}.conf" 2>/dev/null | cut -d= -f2)
+        echo -e "  AP SSID:         ${GREEN}$SSID${NC}"
+    else
+        AP_IP=$(ip addr show wlan0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    fi
+    echo -e "  AP IP:           ${GREEN}${AP_IP:-unknown}${NC}"
 elif iwgetid -r > /dev/null 2>&1; then
     echo -e "  Mode:            ${GREEN}CLIENT (connected)${NC}"
     echo -e "  Wi-Fi SSID:      ${GREEN}$(iwgetid -r)${NC}"
-    echo -e "  IP Address:      ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
+    echo -e "  Wi-Fi IP:        ${GREEN}$(hostname -I | awk '{print $1}')${NC}"
     echo -e "  Signal:          $(iwconfig wlan0 2>/dev/null | grep -i quality | awk '{print $2}' | cut -d= -f2)"
-elif systemctl is-active --quiet wpa_supplicant; then
-    echo -e "  Mode:            ${YELLOW}CLIENT (not connected)${NC}"
 else
-    echo -e "  Mode:            ${RED}Wi-Fi DISABLED${NC}"
+    echo -e "  Mode:            ${YELLOW}CLIENT (not connected)${NC}"
 fi
 
 # Ethernet Status
